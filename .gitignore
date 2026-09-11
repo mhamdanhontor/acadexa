@@ -1,33 +1,61 @@
-# prod
-dist/
-
-# dev
-.yarn/
-!.yarn/releases
-.vscode/*
-!.vscode/launch.json
-!.vscode/*.code-snippets
-.idea/workspace.xml
-.idea/usage.statistics.xml
-.idea/shelf
-
-# deps
-node_modules/
-.wrangler
-
-# env
+# ==============================
+# ENVIRONMENT / SECRETS
+# ==============================
 .env
-.env.production
-.dev.vars
+.env.*
+!.env.example
 
-# logs
-logs/
-*.log
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-pnpm-debug.log*
-lerna-debug.log*
+# ==============================
+# PYTHON
+# ==============================
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+backend/venv/
+backend/.venv/
+backend/env/
+*.egg-info/
 
-# misc
+# ==============================
+# PYTEST / COVERAGE
+# ==============================
+.pytest_cache/
+.coverage
+htmlcov/
+
+# ==============================
+# NODE / REACT / VITE
+# ==============================
+node_modules/
+frontend/dist/
+.vite/
+
+# ==============================
+# IDE / OS
+# ==============================
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+.idea/
 .DS_Store
+Thumbs.db
+desktop.ini
+
+# ==============================
+# GENERATED / STORAGE
+# ==============================
+backend/storage/backups/*
+backend/storage/reports/*
+backend/storage/uploads/*
+!backend/storage/backups/.gitkeep
+!backend/storage/reports/.gitkeep
+!backend/storage/uploads/.gitkeep
+*.log
+logs/
+
+# ==============================
+# ELECTRON
+# ==============================
+electron/dist/
+electron/out/
