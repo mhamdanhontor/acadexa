@@ -1,19 +1,43 @@
 """Acadexa FastAPI application entrypoint."""
 import logging
+from contextlib import asynccontextmanager
 
+from apscheduler.schedulers.background import BackgroundScheduler
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.config import settings
 from app.core.errors import register_exception_handlers
+from app.workers.notification_worker import process_pending_notifications
 
 logging.basicConfig(level=settings.LOG_LEVEL)
+logger = logging.getLogger("acadexa.main")
+
+scheduler = BackgroundScheduler()
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    scheduler.add_job(
+        process_pending_notifications,
+        "interval",
+        seconds=settings.NOTIFICATION_WORKER_INTERVAL_SECONDS,
+        id="notification_worker",
+        max_instances=1,
+        coalesce=True,
+    )
+    scheduler.start()
+    logger.info("Notification worker scheduler started (interval=%ss)", settings.NOTIFICATION_WORKER_INTERVAL_SECONDS)
+    yield
+    scheduler.shutdown(wait=False)
+
 
 app = FastAPI(
     title=settings.APP_NAME,
     version="1.0.0",
     docs_url="/docs" if settings.ENABLE_DOCS else None,
     redoc_url="/redoc" if settings.ENABLE_DOCS else None,
+    lifespan=lifespan,
 )
 
 app.add_middleware(
@@ -26,8 +50,26 @@ app.add_middleware(
 
 register_exception_handlers(app)
 
-# Routers implemented so far
-from app.api import auth, users, classes, batches, subjects, students, attendance, test_sessions, tests, marks  # noqa: E402
+# Routers
+from app.api import (  # noqa: E402
+    audit_logs,
+    auth,
+    backups,
+    batches,
+    classes,
+    dashboard,
+    exports,
+    marks,
+    notifications,
+    reports,
+    settings as settings_api,
+    students,
+    subjects,
+    test_sessions,
+    tests,
+    users,
+    attendance,
+)
 
 prefix = settings.API_V1_PREFIX
 app.include_router(auth.router, prefix=prefix)
@@ -40,6 +82,13 @@ app.include_router(attendance.router, prefix=prefix)
 app.include_router(test_sessions.router, prefix=prefix)
 app.include_router(tests.router, prefix=prefix)
 app.include_router(marks.router, prefix=prefix)
+app.include_router(notifications.router, prefix=prefix)
+app.include_router(reports.router, prefix=prefix)
+app.include_router(dashboard.router, prefix=prefix)
+app.include_router(audit_logs.router, prefix=prefix)
+app.include_router(backups.router, prefix=prefix)
+app.include_router(settings_api.router, prefix=prefix)
+app.include_router(exports.router, prefix=prefix)
 
 
 @app.get("/health")
