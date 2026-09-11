@@ -28,6 +28,7 @@
     "files": [
       "main.js",
       "preload.js",
+      "config-ui/**/*",
       "app-dist/**/*"
     ],
     "win": {
