@@ -93,6 +93,30 @@ apiClient.interceptors.response.use(
   }
 )
 
+/**
+ * Triggers an authenticated file download for endpoints that require a Bearer
+ * token (reports/backups/exports). A plain <a href> cannot carry the
+ * Authorization header, so we fetch as a blob via the authenticated
+ * apiClient instance and then trigger a browser download.
+ */
+export async function downloadFile(path, suggestedFilename) {
+  const response = await apiClient.get(path, { responseType: 'blob' })
+  const disposition = response.headers['content-disposition']
+  let filename = suggestedFilename || 'download'
+  if (disposition) {
+    const match = disposition.match(/filename="?([^"]+)"?/)
+    if (match) filename = match[1]
+  }
+  const blobUrl = window.URL.createObjectURL(response.data)
+  const link = document.createElement('a')
+  link.href = blobUrl
+  link.download = filename
+  document.body.appendChild(link)
+  link.click()
+  document.body.removeChild(link)
+  window.URL.revokeObjectURL(blobUrl)
+}
+
 export function normalizeError(error) {
   if (error.response?.data?.error) {
     return {

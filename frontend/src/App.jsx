@@ -7,7 +7,16 @@ import DashboardPage from './pages/DashboardPage'
 import ClassesPage from './pages/ClassesPage'
 import BatchesPage from './pages/BatchesPage'
 import SubjectsPage from './pages/SubjectsPage'
-import ComingSoonPage from './pages/ComingSoonPage'
+import StudentsPage from './pages/StudentsPage'
+import AttendancePage from './pages/AttendancePage'
+import TestsPage from './pages/TestsPage'
+import MarksPage from './pages/MarksPage'
+import ReportsPage from './pages/ReportsPage'
+import NotificationsPage from './pages/NotificationsPage'
+import UsersPage from './pages/UsersPage'
+import BackupsPage from './pages/BackupsPage'
+import AuditLogsPage from './pages/AuditLogsPage'
+import SettingsPage from './pages/SettingsPage'
 
 export default function App() {
   return (
@@ -26,23 +35,20 @@ export default function App() {
           >
             <Route index element={<Navigate to="/dashboard" replace />} />
             <Route path="dashboard" element={<DashboardPage />} />
+            <Route path="students" element={<StudentsPage />} />
             <Route path="classes" element={<ClassesPage />} />
             <Route path="batches" element={<BatchesPage />} />
             <Route path="subjects" element={<SubjectsPage />} />
-
-            {/* Remaining modules: implemented on the backend (API layer ready),
-                UI pages are placeholders pending the next build pass. */}
-            <Route path="students" element={<ComingSoonPage title="Students" />} />
-            <Route path="attendance" element={<ComingSoonPage title="Attendance" />} />
-            <Route path="tests" element={<ComingSoonPage title="Tests" />} />
-            <Route path="marks" element={<ComingSoonPage title="Marks" />} />
-            <Route path="reports" element={<ComingSoonPage title="Reports" />} />
-            <Route path="notifications" element={<ComingSoonPage title="Notifications" />} />
+            <Route path="attendance" element={<AttendancePage />} />
+            <Route path="tests" element={<TestsPage />} />
+            <Route path="marks" element={<MarksPage />} />
+            <Route path="reports" element={<ReportsPage />} />
+            <Route path="notifications" element={<NotificationsPage />} />
             <Route
               path="users"
               element={
                 <ProtectedRoute roles={['SUPER_ADMIN']}>
-                  <ComingSoonPage title="Users & Roles" />
+                  <UsersPage />
                 </ProtectedRoute>
               }
             />
@@ -50,7 +56,7 @@ export default function App() {
               path="backups"
               element={
                 <ProtectedRoute roles={['SUPER_ADMIN', 'ADMIN']}>
-                  <ComingSoonPage title="Backups" />
+                  <BackupsPage />
                 </ProtectedRoute>
               }
             />
@@ -58,7 +64,7 @@ export default function App() {
               path="audit-logs"
               element={
                 <ProtectedRoute roles={['SUPER_ADMIN', 'ADMIN']}>
-                  <ComingSoonPage title="Audit Logs" />
+                  <AuditLogsPage />
                 </ProtectedRoute>
               }
             />
@@ -66,7 +72,7 @@ export default function App() {
               path="settings"
               element={
                 <ProtectedRoute roles={['SUPER_ADMIN', 'ADMIN']}>
-                  <ComingSoonPage title="Settings" />
+                  <SettingsPage />
                 </ProtectedRoute>
               }
             />

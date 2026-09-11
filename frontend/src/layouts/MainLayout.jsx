@@ -7,6 +7,7 @@ const NAV_ITEMS = [
   { to: '/students', label: 'Students', icon: 'fa-user-graduate' },
   { to: '/classes', label: 'Classes', icon: 'fa-school' },
   { to: '/batches', label: 'Batches', icon: 'fa-layer-group' },
+  { to: '/subjects', label: 'Subjects', icon: 'fa-book' },
   { to: '/attendance', label: 'Attendance', icon: 'fa-calendar-check' },
   { to: '/tests', label: 'Tests', icon: 'fa-file-pen' },
   { to: '/marks', label: 'Marks', icon: 'fa-list-ol' },
