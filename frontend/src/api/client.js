@@ -6,12 +6,32 @@
  */
 import axios from 'axios'
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '/api/v1'
+/**
+ * Resolve the backend API base URL, in priority order:
+ *   1. window.__ACADEXA_API_BASE_URL__ — injected by the Electron shell at
+ *      runtime once the user has configured which central server this
+ *      academy computer should talk to (see electron/main.js).
+ *   2. VITE_API_BASE_URL — build-time env var for a plain web deployment
+ *      pointing at a separately hosted API.
+ *   3. '/api/v1' — relative path, used by the Vite dev/preview proxy when
+ *      frontend and backend run on the same host (sandbox testing).
+ */
+function resolveApiBaseUrl() {
+  if (typeof window !== 'undefined' && window.__ACADEXA_API_BASE_URL__) {
+    return window.__ACADEXA_API_BASE_URL__
+  }
+  return import.meta.env.VITE_API_BASE_URL || '/api/v1'
+}
 
 export const apiClient = axios.create({
-  baseURL: API_BASE_URL,
+  baseURL: resolveApiBaseUrl(),
   timeout: 20000,
 })
+
+/** Re-reads the resolved base URL (call after the Electron shell updates the server URL). */
+export function refreshApiBaseUrl() {
+  apiClient.defaults.baseURL = resolveApiBaseUrl()
+}
 
 function getAccessToken() {
   return localStorage.getItem('acadexa_access_token')
