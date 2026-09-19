@@ -1,0 +1,67 @@
+# ==============================
+# ENVIRONMENT / SECRETS
+# ==============================
+.env
+.env.*
+!.env.example
+!.env.windows.example
+
+# ==============================
+# PYTHON
+# ==============================
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+backend/venv/
+backend/.venv/
+backend/env/
+*.egg-info/
+
+# ==============================
+# PYTEST / COVERAGE
+# ==============================
+.pytest_cache/
+.coverage
+htmlcov/
+
+# ==============================
+# NODE / REACT / VITE
+# ==============================
+node_modules/
+frontend/dist/
+.vite/
+
+# ==============================
+# IDE / OS
+# ==============================
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+.idea/
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ==============================
+# GENERATED / STORAGE
+# ==============================
+backend/storage/backups/*
+backend/storage/reports/*
+backend/storage/uploads/*
+!backend/storage/backups/.gitkeep
+!backend/storage/reports/.gitkeep
+!backend/storage/uploads/.gitkeep
+*.log
+logs/
+
+# ==============================
+# ELECTRON
+# ==============================
+electron/dist/
+electron/out/
+electron/release/
+electron/app-dist/
+electron/node_modules/
+core
+*.core

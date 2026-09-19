@@ -1,0 +1,40 @@
+services:
+  - type: web
+    name: acadexa-backend
+    runtime: python
+    plan: free
+    region: oregon
+    rootDir: backend
+    buildCommand: "./build.sh"
+    startCommand: "./start.sh"
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.9
+      - key: APP_ENV
+        value: production
+      - key: APP_NAME
+        value: "Honor Knowledge Academy"
+      - key: LOG_LEVEL
+        value: INFO
+      - key: API_V1_PREFIX
+        value: /api/v1
+      - key: ENABLE_DOCS
+        value: "true"
+      - key: DATABASE_URL
+        sync: false
+      - key: SECRET_KEY
+        generateValue: true
+      - key: JWT_ALGORITHM
+        value: HS256
+      - key: ACCESS_TOKEN_EXPIRE_MINUTES
+        value: "60"
+      - key: REFRESH_TOKEN_EXPIRE_MINUTES
+        value: "10080"
+      - key: CORS_ORIGINS
+        value: "*"
+      - key: WHATSAPP_PROVIDER
+        value: admin_web
+      - key: NOTIFICATION_WORKER_INTERVAL_SECONDS
+        value: "30"
+      - key: WHATSAPP_DISPATCH_DELAY_SECONDS
+        value: "10"
