@@ -71,6 +71,8 @@ def run():
             existing_tpl = db.query(NotificationTemplate).filter(NotificationTemplate.type == notif_type).first()
             if not existing_tpl:
                 db.add(NotificationTemplate(type=notif_type, name=notif_type.value.title(), body=body))
+            else:
+                existing_tpl.body = body
 
         db.commit()
         print("Seed completed successfully.")

@@ -18,16 +18,33 @@ TEMPLATE_VAR_PATTERN = re.compile(r"\{(\w+)\}")
 
 DEFAULT_TEMPLATES: dict[NotificationType, str] = {
     NotificationType.ABSENCE: (
-        "Dear {guardian_name}, this is to inform you that {student_name} was ABSENT on {date}. "
-        "- {academy_name}"
+        "السلام علیکم / Assalam-o-Alaikum\n\n"
+        "Dear {guardian_name},\n"
+        "This is to respectfully inform you that your child {student_name} was marked ABSENT from the academy on {date}.\n\n"
+        "محترم {guardian_name}،\n"
+        "اطلاع دی جاتی ہے کہ آپ کا بچہ {student_name} مورخہ {date} کو اکیڈمی سے غیر حاضر تھا۔\n\n"
+        "— {academy_name}"
     ),
     NotificationType.MARKS: (
-        "Dear {guardian_name}, {student_name} scored {obtained_marks}/{total_marks} "
-        "({percentage}%) in {subject} ({test_name}). - {academy_name}"
+        "السلام علیکم / Assalam-o-Alaikum\n\n"
+        "Dear {guardian_name},\n"
+        "Test Result Announcement:\n"
+        "Student: {student_name}\n"
+        "Subject: {subject} ({test_name})\n"
+        "Marks: {obtained_marks}/{total_marks} ({percentage}%)\n\n"
+        "محترم {guardian_name}،\n"
+        "امتحانی نتیجہ برائے {student_name}:\n"
+        "مضمون: {subject} ({test_name})\n"
+        "حاصل کردہ نمبر: {obtained_marks}/{total_marks} ({percentage}%)\n\n"
+        "— {academy_name}"
     ),
     NotificationType.MONTHLY_REPORT: (
-        "Dear {guardian_name}, the monthly attendance report for {student_name} "
-        "({class_name} - {batch_name}) for {date} is now available. - {academy_name}"
+        "السلام علیکم / Assalam-o-Alaikum\n\n"
+        "Dear {guardian_name},\n"
+        "The monthly academic and attendance progress report for {student_name} ({class_name} - {batch_name}) for the period {date} is now available.\n\n"
+        "محترم {guardian_name}،\n"
+        "اطلاع دی جاتی ہے کہ {student_name} ({class_name} - {batch_name}) کی ماہانہ تعلیمی و حاضری رپورٹ برائے {date} تیار ہے۔\n\n"
+        "— {academy_name}"
     ),
 }
 
