@@ -351,12 +351,11 @@ def save_global_attendance(
                 context_ref = "attendance_absence"
             else:  # LEAVE
                 msg = (
-                    f"السلام علیکم / Assalam-o-Alaikum\n\n"
-                    f"Dear {guardian_label},\n"
-                    f"This is to inform you that {student.name} was marked on LEAVE on {payload.date.isoformat()}.\n\n"
-                    f"محترم {guardian_label}،\n"
-                    f"اطلاع دی جاتی ہے کہ {student.name} کو مورخہ {payload.date.isoformat()} کو رخصت (Leave) پر درج کیا گیا ہے۔\n\n"
-                    f"— {academy_name}"
+                    f"*Assalam-o-Alaikum*\n\n"
+                    f"Dear Parent/Guardian (*{guardian_label}*),\n\n"
+                    f"This is to inform you that your child *{student.name}* was marked on *LEAVE* on *{payload.date.isoformat()}*.\n\n"
+                    f"Regards,\n"
+                    f"*{academy_name}*"
                 )
                 context_ref = "attendance_leave"
 

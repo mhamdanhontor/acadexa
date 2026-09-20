@@ -18,33 +18,42 @@ TEMPLATE_VAR_PATTERN = re.compile(r"\{(\w+)\}")
 
 DEFAULT_TEMPLATES: dict[NotificationType, str] = {
     NotificationType.ABSENCE: (
-        "السلام علیکم / Assalam-o-Alaikum\n\n"
-        "Dear {guardian_name},\n"
-        "This is to respectfully inform you that your child {student_name} was marked ABSENT from the academy on {date}.\n\n"
-        "محترم {guardian_name}،\n"
-        "اطلاع دی جاتی ہے کہ آپ کا بچہ {student_name} مورخہ {date} کو اکیڈمی سے غیر حاضر تھا۔\n\n"
-        "— {academy_name}"
+        "*Assalam-o-Alaikum*\n\n"
+        "Dear Parent/Guardian (*{guardian_name}*),\n\n"
+        "This is to respectfully inform you that your child *{student_name}* was marked *ABSENT* from the academy on *{date}*.\n\n"
+        "If this was unexpected or you have any queries, please contact the academy administration.\n\n"
+        "Regards,\n"
+        "*{academy_name}*"
     ),
     NotificationType.MARKS: (
-        "السلام علیکم / Assalam-o-Alaikum\n\n"
-        "Dear {guardian_name},\n"
-        "Test Result Announcement:\n"
-        "Student: {student_name}\n"
-        "Subject: {subject} ({test_name})\n"
-        "Marks: {obtained_marks}/{total_marks} ({percentage}%)\n\n"
-        "محترم {guardian_name}،\n"
-        "امتحانی نتیجہ برائے {student_name}:\n"
-        "مضمون: {subject} ({test_name})\n"
-        "حاصل کردہ نمبر: {obtained_marks}/{total_marks} ({percentage}%)\n\n"
-        "— {academy_name}"
+        "*Assalam-o-Alaikum*\n\n"
+        "Dear Parent/Guardian (*{guardian_name}*),\n\n"
+        "Test Result Announcement for *{student_name}*:\n\n"
+        "📚 *Subject:* {subject}\n"
+        "📝 *Test:* {test_name}\n"
+        "🎯 *Score:* {obtained_marks}/{total_marks} ({percentage}%)\n\n"
+        "Keep encouraging your child's academic journey!\n\n"
+        "Regards,\n"
+        "*{academy_name}*"
     ),
     NotificationType.MONTHLY_REPORT: (
-        "السلام علیکم / Assalam-o-Alaikum\n\n"
-        "Dear {guardian_name},\n"
-        "The monthly academic and attendance progress report for {student_name} ({class_name} - {batch_name}) for the period {date} is now available.\n\n"
-        "محترم {guardian_name}،\n"
-        "اطلاع دی جاتی ہے کہ {student_name} ({class_name} - {batch_name}) کی ماہانہ تعلیمی و حاضری رپورٹ برائے {date} تیار ہے۔\n\n"
-        "— {academy_name}"
+        "*Assalam-o-Alaikum*\n\n"
+        "Dear Parent/Guardian (*{guardian_name}*),\n\n"
+        "The monthly academic and attendance progress report for *{student_name}* ({class_name} - {batch_name}) for the period *{date}* is now available.\n\n"
+        "Regards,\n"
+        "*{academy_name}*"
+    ),
+    NotificationType.FEE_RECEIPT: (
+        "*Assalam-o-Alaikum*\n\n"
+        "Dear Parent/Guardian (*{guardian_name}*),\n\n"
+        "Fee payment confirmation for *{student_name}*:\n\n"
+        "💵 *Amount Paid:* PKR {amount_paid}\n"
+        "📅 *Month/Period:* {month}\n"
+        "🧾 *Receipt #:* {receipt_no}\n"
+        "💳 *Remaining Balance:* PKR {remaining_balance}\n\n"
+        "Thank you for your timely payment!\n\n"
+        "Regards,\n"
+        "*{academy_name}*"
     ),
 }
 

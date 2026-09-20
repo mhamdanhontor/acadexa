@@ -78,7 +78,25 @@ class MarksOut(BaseModel):
         from_attributes = True
 
 
+class MarksDispatchItemOut(BaseModel):
+    notification_id: Optional[int] = None
+    student_id: int
+    student_name: str
+    student_code: Optional[str] = None
+    guardian_name: str
+    whatsapp_number: str
+    obtained_marks: float
+    total_marks: float
+    percentage: float
+    grade: Optional[str] = None
+    message: str
+    whatsapp_web_url: str
+    whatsapp_app_url: str
+    status: str = "PENDING"
+
+
 class BulkMarksResult(BaseModel):
     test_id: int
     students_updated: int
     notifications_queued: int
+    dispatches: list[MarksDispatchItemOut] = []

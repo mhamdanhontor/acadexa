@@ -19,6 +19,7 @@ class NotificationType(str, enum.Enum):
     ABSENCE = "ABSENCE"
     MARKS = "MARKS"
     MONTHLY_REPORT = "MONTHLY_REPORT"
+    FEE_RECEIPT = "FEE_RECEIPT"
 
 
 class NotificationStatus(str, enum.Enum):
