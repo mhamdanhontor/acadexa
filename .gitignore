@@ -59,9 +59,7 @@ logs/
 # ELECTRON
 # ==============================
 electron/dist/
-electron/out/
 electron/release/
 electron/app-dist/
 electron/node_modules/
-core
 *.core

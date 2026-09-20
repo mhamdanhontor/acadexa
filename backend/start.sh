@@ -2,6 +2,8 @@
 # Exit on error
 set -o errexit
 
+export PYTHONPATH=".:$PYTHONPATH"
+
 echo "--- Running database migrations (Alembic) ---"
 alembic upgrade head
 
