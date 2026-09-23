@@ -54,7 +54,7 @@ def list_students(
     if admission_date_to is not None:
         stmt = stmt.where(Student.admission_date <= admission_date_to)
 
-    stmt = stmt.order_by(Student.name)
+    stmt = stmt.order_by(Student.student_code.asc(), Student.id.asc())
 
     items, total, total_pages = paginate(db, stmt, page, page_size)
     return PaginatedResponse(items=items, total=total, page=page, page_size=page_size, total_pages=total_pages)

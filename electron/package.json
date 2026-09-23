@@ -1,6 +1,6 @@
 {
   "name": "acadexa-desktop",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "description": "Acadexa — Academy Attendance & Student Management System (Electron desktop shell)",
   "main": "main.js",
   "private": true,

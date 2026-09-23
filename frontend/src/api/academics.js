@@ -3,6 +3,7 @@ import { apiClient } from './client'
 // Test Sessions
 export const listTestSessions = () => apiClient.get('/test-sessions').then((r) => r.data)
 export const createTestSession = (payload) => apiClient.post('/test-sessions', payload).then((r) => r.data)
+export const updateTestSession = (id, payload) => apiClient.put(`/test-sessions/${id}`, payload).then((r) => r.data)
 export const deleteTestSession = (id) => apiClient.delete(`/test-sessions/${id}`)
 
 // Tests

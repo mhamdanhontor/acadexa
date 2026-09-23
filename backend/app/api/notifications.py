@@ -132,3 +132,48 @@ def dispatch_pending_notifications(
 
     processed = process_pending_notifications()
     return {"processed": processed, "mode": settings.WHATSAPP_PROVIDER}
+
+
+@router.delete("/notifications/pending")
+def delete_all_pending_notifications(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_roles(RoleName.SUPER_ADMIN, RoleName.ADMIN)),
+):
+    """Delete all notification jobs with status PENDING or RETRYING."""
+    pending_jobs = (
+        db.query(NotificationJob)
+        .filter(NotificationJob.status.in_([NotificationStatus.PENDING, NotificationStatus.RETRYING]))
+        .all()
+    )
+    count = len(pending_jobs)
+    if count > 0:
+        db.query(NotificationJob).filter(
+            NotificationJob.status.in_([NotificationStatus.PENDING, NotificationStatus.RETRYING])
+        ).delete(synchronize_session=False)
+        record_audit(
+            db,
+            current_user.id,
+            "NOTIFICATIONS_PENDING_DELETED",
+            "notification_job",
+            None,
+            f"Deleted {count} pending notifications",
+        )
+        db.commit()
+
+    return {"deleted": count}
+
+
+@router.delete("/notifications/{job_id}", status_code=204)
+def delete_notification(
+    job_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_roles(RoleName.SUPER_ADMIN, RoleName.ADMIN)),
+):
+    job = db.get(NotificationJob, job_id)
+    if job is None:
+        raise NotFoundError("Notification job not found.")
+    db.delete(job)
+    record_audit(db, current_user.id, "NOTIFICATION_DELETED", "notification_job", job_id, f"Deleted job #{job_id}")
+    db.commit()
+    return None
+

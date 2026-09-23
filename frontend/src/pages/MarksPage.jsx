@@ -91,10 +91,14 @@ export default function MarksPage() {
       setSelectedTest(test)
 
       const [studentData, existingMarks] = await Promise.all([
-        listStudents({ class_id: test.class_id, batch_id: test.batch_id, is_active: true, page_size: 200 }),
-        listMarks({ test_id: testId, page_size: 200 }),
+        listStudents({ class_id: test.class_id, is_active: true, page_size: 500 }),
+        listMarks({ test_id: testId, page_size: 500 }),
       ])
-      const sItems = Array.isArray(studentData) ? studentData : (studentData?.items || [])
+      const rawStudents = Array.isArray(studentData) ? studentData : (studentData?.items || [])
+      // Sort in ascending order of Student ID (natural numeric sorting)
+      const sItems = [...rawStudents].sort((a, b) =>
+        (a.student_code || '').localeCompare(b.student_code || '', undefined, { numeric: true }) || (a.id - b.id)
+      )
       const mItems = Array.isArray(existingMarks) ? existingMarks : (existingMarks?.items || [])
       setStudents(sItems)
 
@@ -394,6 +398,7 @@ export default function MarksPage() {
                 <tr>
                   <th className="px-5 py-3 font-medium">Student ID</th>
                   <th className="px-5 py-3 font-medium">Name</th>
+                  <th className="px-5 py-3 font-medium">Batch</th>
                   <th className="px-5 py-3 font-medium">Obtained Marks</th>
                   <th className="px-5 py-3 font-medium">Percentage</th>
                   <th className="px-5 py-3 font-medium">Grade</th>
@@ -405,8 +410,13 @@ export default function MarksPage() {
                   const pct = value !== '' && selectedTest ? ((Number(value) / selectedTest.total_marks) * 100).toFixed(1) : '—'
                   return (
                     <tr key={s.id}>
-                      <td className="px-5 py-3 text-gray-600">{s.student_code}</td>
+                      <td className="px-5 py-3 font-mono text-xs font-bold text-indigo-700">{s.student_code}</td>
                       <td className="px-5 py-3 font-medium text-gray-800">{s.name}</td>
+                      <td className="px-5 py-3 text-gray-600">
+                        <span className="text-xs bg-gray-100 text-gray-700 px-2 py-0.5 rounded-md font-medium border border-gray-200">
+                          {s.batch?.name || '—'}
+                        </span>
+                      </td>
                       <td className="px-5 py-3">
                         <input
                           type="number"

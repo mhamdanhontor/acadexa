@@ -20,8 +20,19 @@ scheduler = BackgroundScheduler()
 async def lifespan(app: FastAPI):
     # Ensure all tables exist in database
     from app.db.session import Base, engine
-    import app.models  # noqa: F401
     Base.metadata.create_all(bind=engine)
+
+    try:
+        from sqlalchemy import text
+        with engine.begin() as conn:
+            conn.execute(text("ALTER TABLE test_sessions ADD COLUMN IF NOT EXISTS class_id INTEGER REFERENCES classes(id)"))
+            # Try PostgreSQL alter column syntax if batch_id exists and is NOT NULL
+            try:
+                conn.execute(text("ALTER TABLE tests ALTER COLUMN batch_id DROP NOT NULL"))
+            except Exception:
+                pass
+    except Exception as exc:
+        logger.debug("Schema migration note: %s", exc)
 
     scheduler.add_job(
         process_pending_notifications,
@@ -39,7 +50,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title=settings.APP_NAME,
-    version="1.0.2",
+    version="1.0.3",
     docs_url="/docs" if settings.ENABLE_DOCS else None,
     redoc_url="/redoc" if settings.ENABLE_DOCS else None,
     lifespan=lifespan,

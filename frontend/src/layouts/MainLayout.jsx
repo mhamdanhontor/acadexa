@@ -57,7 +57,7 @@ export default function MainLayout() {
           <p className="text-xs text-gray-400 truncate">{user?.role_name}</p>
           <div className="mt-3 flex items-center justify-between text-xs text-gray-500 font-mono">
             <span>Version</span>
-            <span className="bg-gray-800 text-indigo-400 px-2 py-0.5 rounded border border-gray-700 font-semibold">v1.0.2</span>
+            <span className="bg-gray-800 text-indigo-400 px-2 py-0.5 rounded border border-gray-700 font-semibold">v1.0.3</span>
           </div>
           <button
             onClick={logout}
@@ -74,7 +74,7 @@ export default function MainLayout() {
           <div className="flex items-center gap-2.5">
             <span className="text-xs font-bold text-gray-600 uppercase tracking-wider">Acadexa</span>
             <span className="text-[11px] bg-indigo-50 text-indigo-700 font-semibold px-2 py-0.5 rounded-full border border-indigo-200">
-              v1.0.2
+              v1.0.3
             </span>
           </div>
           <div className="flex items-center gap-3">

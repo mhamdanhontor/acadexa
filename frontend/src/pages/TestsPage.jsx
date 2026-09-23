@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import {
   listTestSessions,
   createTestSession,
+  updateTestSession,
   deleteTestSession,
   listTests,
   createTest,
@@ -18,7 +19,7 @@ import EmptyState from '../components/EmptyState'
 import Modal from '../components/Modal'
 import ConfirmDeleteModal from '../components/ConfirmDeleteModal'
 
-const EMPTY_SESSION_FORM = { name: '', start_date: '', end_date: '', period_count: 4 }
+const EMPTY_SESSION_FORM = { name: '', start_date: '', end_date: '', period_count: 4, class_id: '' }
 const EMPTY_TEST_FORM = {
   session_id: '',
   period_label: '',
@@ -56,6 +57,9 @@ export default function TestsPage() {
   // Modals state
   const [sessionModalOpen, setSessionModalOpen] = useState(false)
   const [sessionForm, setSessionForm] = useState(EMPTY_SESSION_FORM)
+
+  const [editSessionModalOpen, setEditSessionModalOpen] = useState(false)
+  const [editSessionForm, setEditSessionForm] = useState(EMPTY_SESSION_FORM)
 
   const [testModalOpen, setTestModalOpen] = useState(false)
   const [testForm, setTestForm] = useState(EMPTY_TEST_FORM)
@@ -162,6 +166,7 @@ export default function TestsPage() {
       const newSession = await createTestSession({
         ...sessionForm,
         period_count: Number(sessionForm.period_count),
+        class_id: sessionForm.class_id ? Number(sessionForm.class_id) : null,
       })
       setSessionModalOpen(false)
       setSessionForm(EMPTY_SESSION_FORM)
@@ -169,6 +174,29 @@ export default function TestsPage() {
       await loadAll()
       // Auto-enter the newly created session
       setSelectedSession(newSession)
+    } catch (err) {
+      setFormError(normalizeError(err).message)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  // Handlers for Session Update (including selecting/changing class)
+  async function handleUpdateSession(e) {
+    e.preventDefault()
+    if (!selectedSession) return
+    setSaving(true)
+    setFormError('')
+    try {
+      const updated = await updateTestSession(selectedSession.id, {
+        ...editSessionForm,
+        period_count: Number(editSessionForm.period_count),
+        class_id: editSessionForm.class_id ? Number(editSessionForm.class_id) : null,
+      })
+      setEditSessionModalOpen(false)
+      setSuccessMsg(`Session "${updated.name}" updated successfully.`)
+      await loadAll()
+      setSelectedSession(updated)
     } catch (err) {
       setFormError(normalizeError(err).message)
     } finally {
@@ -185,8 +213,8 @@ export default function TestsPage() {
       ...EMPTY_TEST_FORM,
       session_id: selectedSession.id,
       subject_id: selectedSubject.id,
-      class_id: classes[0]?.id || '',
-      batch_id: batches[0]?.id || '',
+      class_id: selectedSession.class_id || classes[0]?.id || '',
+      batch_id: '',
       name: suggestedName,
       test_date: new Date().toISOString().slice(0, 10),
       period_label: '',
@@ -200,16 +228,23 @@ export default function TestsPage() {
     e.preventDefault()
     setSaving(true)
     setFormError('')
+    if (!testForm.class_id) {
+      setFormError('Please select a class for this test.')
+      setSaving(false)
+      return
+    }
     try {
-      const created = await createTest({
-        ...testForm,
+      const payload = {
+        name: (testForm.name || '').trim(),
         session_id: Number(testForm.session_id),
         subject_id: Number(testForm.subject_id),
         class_id: Number(testForm.class_id),
-        batch_id: Number(testForm.batch_id),
+        batch_id: testForm.batch_id ? Number(testForm.batch_id) : null,
         total_marks: Number(testForm.total_marks),
         period_label: (testForm.period_label || '').trim() || 'General',
-      })
+        test_date: testForm.test_date,
+      }
+      const created = await createTest(payload)
       setTestModalOpen(false)
       setSuccessMsg(`Test "${created.name}" created successfully.`)
       // Refresh tests
@@ -459,6 +494,14 @@ export default function TestsPage() {
                             {s.name}
                           </h3>
 
+                          {/* Class / Batch Target Indicator */}
+                          <div className="mb-2">
+                            <span className="text-[11px] font-semibold text-indigo-700 bg-indigo-50 border border-indigo-100 px-2 py-0.5 rounded-md inline-flex items-center gap-1">
+                              <i className="fas fa-chalkboard-user text-[10px]"></i>
+                              {s.class_id ? `Class: ${className(s.class_id)} (All Batches)` : 'All Classes'}
+                            </span>
+                          </div>
+
                           <div className="space-y-1.5 text-xs text-gray-500 mb-4">
                             <div className="flex items-center gap-2">
                               <i className="far fa-calendar text-gray-400 w-3.5"></i>
@@ -499,17 +542,43 @@ export default function TestsPage() {
               {/* Session Overview Banner */}
               <div className="bg-gradient-to-r from-indigo-900 via-indigo-800 to-slate-900 text-white rounded-2xl p-6 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
                 <div>
-                  <div className="flex items-center gap-2 mb-2">
+                  <div className="flex items-center gap-2 mb-2 flex-wrap">
                     <span className="text-xs uppercase font-bold tracking-wider text-indigo-200 bg-indigo-800/80 px-2.5 py-0.5 rounded-full border border-indigo-700">
                       Selected Session
                     </span>
                     <span className="text-xs text-indigo-200">
                       {selectedSession.start_date} to {selectedSession.end_date}
                     </span>
+                    <span className="text-xs font-semibold text-emerald-200 bg-emerald-900/60 px-2.5 py-0.5 rounded-full border border-emerald-700 flex items-center gap-1">
+                      <i className="fas fa-chalkboard"></i>
+                      {selectedSession.class_id ? `Class: ${className(selectedSession.class_id)} (All Batches)` : 'No Class Assigned'}
+                    </span>
+                    {canManage && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setEditSessionForm({
+                            name: selectedSession.name,
+                            start_date: selectedSession.start_date,
+                            end_date: selectedSession.end_date,
+                            period_count: selectedSession.period_count,
+                            class_id: selectedSession.class_id || '',
+                          })
+                          setFormError('')
+                          setEditSessionModalOpen(true)
+                        }}
+                        className="text-xs font-semibold text-indigo-200 hover:text-white bg-white/10 hover:bg-white/20 px-2.5 py-0.5 rounded-full border border-white/20 transition-colors cursor-pointer"
+                        title="Select or change class for this session"
+                      >
+                        <i className="fas fa-pen-to-square mr-1"></i>
+                        {selectedSession.class_id ? 'Change Class' : 'Select Class'}
+                      </button>
+                    )}
                   </div>
                   <h2 className="text-2xl font-black tracking-tight">{selectedSession.name}</h2>
                   <p className="text-xs text-indigo-200/90 mt-1">
                     Select a subject below to manage its tests (Test 1, Test 2, Test 3...) or enter test marks.
+                    All enrolled students in <strong>{selectedSession.class_id ? className(selectedSession.class_id) : 'the selected class'}</strong> across all batches will appear in tests.
                   </p>
                 </div>
                 <div className="flex items-center gap-3 shrink-0">
@@ -759,6 +828,23 @@ export default function TestsPage() {
             </div>
           </div>
           <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Participating Class <span className="text-gray-400 font-normal">(All batches will be included in tests)</span>
+            </label>
+            <select
+              value={sessionForm.class_id}
+              onChange={(e) => setSessionForm({ ...sessionForm, class_id: e.target.value })}
+              className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+            >
+              <option value="">Select Class (can also be selected later)</option>
+              {(classes || []).map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Number of Evaluation Periods</label>
             <input
               required
@@ -784,6 +870,91 @@ export default function TestsPage() {
               className="px-4 py-2 text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg disabled:opacity-60 cursor-pointer"
             >
               {saving ? 'Creating...' : 'Create Session'}
+            </button>
+          </div>
+        </form>
+      </Modal>
+
+      {/* ============================================================ */}
+      {/* MODAL: EDIT TEST SESSION (CHANGE CLASS / DETAILS)            */}
+      {/* ============================================================ */}
+      <Modal open={editSessionModalOpen} title="Edit Session & Class" onClose={() => setEditSessionModalOpen(false)}>
+        <form onSubmit={handleUpdateSession} className="space-y-4">
+          {formError && <ErrorAlert message={formError} />}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Session Name</label>
+            <input
+              required
+              value={editSessionForm.name}
+              onChange={(e) => setEditSessionForm({ ...editSessionForm, name: e.target.value })}
+              className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Participating Class <span className="text-gray-400 font-normal">(Students of all batches in this class appear in tests)</span>
+            </label>
+            <select
+              value={editSessionForm.class_id}
+              onChange={(e) => setEditSessionForm({ ...editSessionForm, class_id: e.target.value })}
+              className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 font-medium"
+            >
+              <option value="">No Class Selected</option>
+              {(classes || []).map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Start Date</label>
+              <input
+                required
+                type="date"
+                value={editSessionForm.start_date}
+                onChange={(e) => setEditSessionForm({ ...editSessionForm, start_date: e.target.value })}
+                className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">End Date</label>
+              <input
+                required
+                type="date"
+                value={editSessionForm.end_date}
+                onChange={(e) => setEditSessionForm({ ...editSessionForm, end_date: e.target.value })}
+                className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              />
+            </div>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Number of Evaluation Periods</label>
+            <input
+              required
+              type="number"
+              min="1"
+              max="24"
+              value={editSessionForm.period_count}
+              onChange={(e) => setEditSessionForm({ ...editSessionForm, period_count: e.target.value })}
+              className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+            />
+          </div>
+          <div className="flex justify-end gap-3 pt-3 border-t border-gray-100">
+            <button
+              type="button"
+              onClick={() => setEditSessionModalOpen(false)}
+              className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg cursor-pointer"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={saving}
+              className="px-4 py-2 text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg disabled:opacity-60 cursor-pointer"
+            >
+              {saving ? 'Saving...' : 'Save Changes'}
             </button>
           </div>
         </form>
@@ -837,14 +1008,13 @@ export default function TestsPage() {
               </select>
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Batch</label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Batch / Shift</label>
               <select
-                required
                 value={testForm.batch_id}
                 onChange={(e) => setTestForm({ ...testForm, batch_id: e.target.value })}
                 className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
               >
-                <option value="">Select batch</option>
+                <option value="">All Batches (Whole Class)</option>
                 {(batches || []).map((b) => (
                   <option key={b.id} value={b.id}>
                     {b.name}

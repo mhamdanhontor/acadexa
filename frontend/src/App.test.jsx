@@ -73,16 +73,31 @@ vi.mock('./api/academics', () => ({
   listTests: vi.fn().mockResolvedValue([{ id: 1, name: 'Midterm', period_label: 'P1', total_marks: 100, class_id: 1, batch_id: 1 }]),
   listMarks: vi.fn().mockResolvedValue({ items: [] }),
   saveBulkMarks: vi.fn(),
+  updateTestSession: vi.fn().mockResolvedValue({}),
 }))
 
 vi.mock('./api/reports', () => ({
   listReports: vi.fn().mockResolvedValue({ items: [] }),
   generateReports: vi.fn(),
+  getMonthEndReminder: vi.fn().mockResolvedValue({
+    is_reminder_active: false,
+    current_day: 15,
+    days_in_month: 30,
+    days_remaining: 15,
+    month_name: 'September',
+    message: '',
+    pending_reports_count: 0,
+    approved_reports_count: 0,
+  }),
+  approveAndSendReport: vi.fn().mockResolvedValue({}),
+  approveAndSendAllReports: vi.fn().mockResolvedValue([]),
 }))
 
 vi.mock('./api/notifications', () => ({
   listNotifications: vi.fn().mockResolvedValue({ items: [] }),
   listTemplates: vi.fn().mockResolvedValue([]),
+  deletePendingNotifications: vi.fn().mockResolvedValue({ deleted_count: 0 }),
+  deleteNotification: vi.fn().mockResolvedValue({}),
 }))
 
 vi.mock('./api/users', () => ({
@@ -185,7 +200,7 @@ describe('All Pages Render Without Crashing', () => {
 
   it('renders ReportsPage', async () => {
     render(<MemoryRouter><ReportsPage /></MemoryRouter>)
-    expect(await screen.findByText('Reports')).toBeDefined()
+    expect(await screen.findByRole('heading', { name: /Monthly Reports/ })).toBeDefined()
   })
 
   it('renders NotificationsPage', async () => {

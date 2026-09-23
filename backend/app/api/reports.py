@@ -1,23 +1,71 @@
-"""Monthly report API: generate, list, approve/reject, send, download PDF."""
+"""Monthly report API: generate, list, approve/reject, send, download PDF, month-end reminder."""
 from typing import Optional
 
 from fastapi import APIRouter, Depends, Query
 from fastapi.responses import FileResponse
 from sqlalchemy import select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 
 from app.core.deps import get_current_user, require_roles
 from app.core.errors import NotFoundError
 from app.db.session import get_db
+from app.models.academic_structure import Batch, ClassRoom
 from app.models.enums import ReportStatus, ReportType, RoleName
 from app.models.report import MonthlyReport
+from app.models.student import Student
 from app.models.user import User
 from app.schemas.common import PaginatedResponse
-from app.schemas.report import GenerateMonthlyReportRequest, MonthlyReportOut, ReportApprovalAction
-from app.services.report_service import approve_report, generate_monthly_attendance_reports, send_report
+from app.schemas.report import (
+    BulkApproveAndSendRequest,
+    GenerateMonthlyReportRequest,
+    MonthEndReminderOut,
+    MonthlyReportOut,
+    ReportApprovalAction,
+)
+from app.services.report_service import (
+    approve_and_send_all_reports,
+    approve_and_send_report,
+    approve_report,
+    generate_monthly_attendance_reports,
+    get_month_end_reminder,
+    send_report,
+)
 from app.utils.pagination import paginate
 
 router = APIRouter(prefix="/reports", tags=["Reports"])
+
+
+def _to_report_out(r: MonthlyReport, db: Session) -> MonthlyReportOut:
+    out = MonthlyReportOut.model_validate(r)
+    if r.student:
+        out.student_name = r.student.name
+        out.student_code = r.student.student_code
+        out.guardian_name = r.student.guardian_name or "Parent/Guardian"
+        out.whatsapp_number = r.student.whatsapp_number
+        if r.student.class_room:
+            out.class_name = r.student.class_room.name
+        if r.student.batch:
+            out.batch_name = r.student.batch.name
+
+    if not out.class_name and r.class_id:
+        c = db.get(ClassRoom, r.class_id)
+        if c:
+            out.class_name = c.name
+
+    if not out.batch_name and r.batch_id:
+        b = db.get(Batch, r.batch_id)
+        if b:
+            out.batch_name = b.name
+
+    return out
+
+
+@router.get("/month-end-reminder", response_model=MonthEndReminderOut)
+def month_end_reminder_endpoint(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    return get_month_end_reminder(db)
 
 
 @router.get("", response_model=PaginatedResponse[MonthlyReportOut])
@@ -32,7 +80,13 @@ def list_reports(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    stmt = select(MonthlyReport)
+    stmt = (
+        select(MonthlyReport)
+        .options(
+            joinedload(MonthlyReport.student).joinedload(Student.class_room),
+            joinedload(MonthlyReport.student).joinedload(Student.batch),
+        )
+    )
     if student_id is not None:
         stmt = stmt.where(MonthlyReport.student_id == student_id)
     if class_id is not None:
@@ -46,7 +100,8 @@ def list_reports(
     stmt = stmt.order_by(MonthlyReport.created_at.desc())
 
     items, total, total_pages = paginate(db, stmt, page, page_size)
-    return PaginatedResponse(items=items, total=total, page=page, page_size=page_size, total_pages=total_pages)
+    out_items = [_to_report_out(r, db) for r in items]
+    return PaginatedResponse(items=out_items, total=total, page=page, page_size=page_size, total_pages=total_pages)
 
 
 @router.post("/generate", response_model=list[MonthlyReportOut])
@@ -55,7 +110,7 @@ def generate_reports(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_roles(RoleName.SUPER_ADMIN, RoleName.ADMIN)),
 ):
-    return generate_monthly_attendance_reports(
+    reports = generate_monthly_attendance_reports(
         db,
         payload.period_start,
         payload.period_end,
@@ -64,6 +119,7 @@ def generate_reports(
         payload.student_id,
         current_user.id,
     )
+    return [_to_report_out(r, db) for r in reports]
 
 
 @router.post("/{report_id}/approve", response_model=MonthlyReportOut)
@@ -73,7 +129,8 @@ def approve_or_reject_report(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_roles(RoleName.SUPER_ADMIN, RoleName.ADMIN)),
 ):
-    return approve_report(db, report_id, payload.approve, current_user.id)
+    rep = approve_report(db, report_id, payload.approve, current_user.id)
+    return _to_report_out(rep, db)
 
 
 @router.post("/{report_id}/send", response_model=MonthlyReportOut)
@@ -82,7 +139,35 @@ def send_report_endpoint(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_roles(RoleName.SUPER_ADMIN, RoleName.ADMIN)),
 ):
-    return send_report(db, report_id, current_user.id)
+    rep = send_report(db, report_id, current_user.id)
+    return _to_report_out(rep, db)
+
+
+@router.post("/{report_id}/approve-and-send", response_model=MonthlyReportOut)
+def approve_and_send_endpoint(
+    report_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_roles(RoleName.SUPER_ADMIN, RoleName.ADMIN)),
+):
+    rep = approve_and_send_report(db, report_id, current_user.id)
+    return _to_report_out(rep, db)
+
+
+@router.post("/approve-and-send-all", response_model=list[MonthlyReportOut])
+def approve_and_send_all_endpoint(
+    payload: BulkApproveAndSendRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_roles(RoleName.SUPER_ADMIN, RoleName.ADMIN)),
+):
+    reports = approve_and_send_all_reports(
+        db,
+        current_user.id,
+        payload.period_start,
+        payload.period_end,
+        payload.class_id,
+        payload.batch_id,
+    )
+    return [_to_report_out(r, db) for r in reports]
 
 
 @router.get("/{report_id}/download")

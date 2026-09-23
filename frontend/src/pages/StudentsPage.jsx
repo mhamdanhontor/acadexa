@@ -92,7 +92,11 @@ export default function StudentsPage() {
       if (batchFilter) params.batch_id = batchFilter
       if (statusFilter !== '') params.is_active = statusFilter
       const data = await listStudents(params)
-      setStudents(Array.isArray(data) ? data : (data?.items || []))
+      const raw = Array.isArray(data) ? data : (data?.items || [])
+      const items = [...raw].sort((a, b) =>
+        (a.student_code || '').localeCompare(b.student_code || '', undefined, { numeric: true }) || (a.id - b.id)
+      )
+      setStudents(items)
       setTotal(data?.total ?? 0)
       setTotalPages(data?.total_pages ?? 1)
     } catch (err) {

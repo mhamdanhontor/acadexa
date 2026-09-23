@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { fetchDashboardSummary } from '../api/misc'
+import { getMonthEndReminder } from '../api/reports'
 import { normalizeError } from '../api/client'
 import PageHeader from '../components/PageHeader'
 import Spinner from '../components/Spinner'
@@ -21,7 +23,9 @@ function StatCard({ icon, label, value, colorClass }) {
 }
 
 export default function DashboardPage() {
+  const navigate = useNavigate()
   const [summary, setSummary] = useState(null)
+  const [reminder, setReminder] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
 
@@ -29,8 +33,12 @@ export default function DashboardPage() {
     setLoading(true)
     setError(null)
     try {
-      const data = await fetchDashboardSummary()
+      const [data, rem] = await Promise.all([
+        fetchDashboardSummary(),
+        getMonthEndReminder().catch(() => null),
+      ])
       setSummary(data)
+      setReminder(rem)
     } catch (err) {
       setError(normalizeError(err).message)
     } finally {
@@ -58,6 +66,36 @@ export default function DashboardPage() {
   return (
     <div>
       <PageHeader title="Dashboard" subtitle="Academy overview at a glance" />
+
+      {/* Month-End Report Reminder Banner */}
+      {reminder && reminder.is_reminder_active && (
+        <div className="mb-6 rounded-2xl bg-gradient-to-r from-amber-500 via-orange-500 to-amber-600 p-5 text-white shadow-md flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <div className="flex items-center gap-3.5">
+            <div className="w-10 h-10 rounded-xl bg-white/20 backdrop-blur-md flex items-center justify-center text-xl shrink-0">
+              <i className="fas fa-bell"></i>
+            </div>
+            <div>
+              <div className="flex items-center gap-2 mb-0.5">
+                <span className="text-[11px] font-bold uppercase tracking-wider bg-black/20 px-2 py-0.5 rounded-full">
+                  Month-End Action Required
+                </span>
+                <span className="text-xs text-amber-100">
+                  {reminder.days_remaining === 0 ? 'Today is the final day' : `${reminder.days_remaining} day(s) remaining`}
+                </span>
+              </div>
+              <p className="text-sm font-semibold">{reminder.message}</p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => navigate('/reports')}
+            className="bg-white hover:bg-amber-50 text-amber-900 text-xs font-bold px-4 py-2.5 rounded-xl shadow-xs transition-colors shrink-0 flex items-center gap-1.5 cursor-pointer"
+          >
+            Go to Reports
+            <i className="fas fa-arrow-right"></i>
+          </button>
+        </div>
+      )}
 
       <h3 className="text-sm font-semibold text-gray-500 uppercase mb-3">Attendance Today</h3>
       <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-8">

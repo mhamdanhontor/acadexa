@@ -10,15 +10,26 @@ class TestSessionBase(BaseModel):
     start_date: date
     end_date: date
     period_count: int = Field(default=4, ge=1, le=24)
+    class_id: Optional[int] = None
 
 
 class TestSessionCreate(TestSessionBase):
     pass
 
 
+class TestSessionUpdate(BaseModel):
+    name: Optional[str] = Field(default=None, min_length=1, max_length=150)
+    start_date: Optional[date] = None
+    end_date: Optional[date] = None
+    period_count: Optional[int] = Field(default=None, ge=1, le=24)
+    class_id: Optional[int] = None
+    is_active: Optional[bool] = None
+
+
 class TestSessionOut(TestSessionBase):
     id: int
     is_active: bool
+    class_name: Optional[str] = None
 
     class Config:
         from_attributes = True
@@ -29,7 +40,7 @@ class TestBase(BaseModel):
     period_label: str = Field(min_length=1, max_length=50)
     subject_id: int
     class_id: int
-    batch_id: int
+    batch_id: Optional[int] = None
     name: str = Field(min_length=1, max_length=150)
     test_date: date
     total_marks: float = Field(gt=0)

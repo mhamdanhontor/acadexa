@@ -21,7 +21,10 @@ class TestSession(Base, TimestampMixin):
     start_date: Mapped[date] = mapped_column(Date, nullable=False)
     end_date: Mapped[date] = mapped_column(Date, nullable=False)
     period_count: Mapped[int] = mapped_column(Integer, default=4, nullable=False)
+    class_id: Mapped[Optional[int]] = mapped_column(ForeignKey("classes.id"), nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+
+    class_room = relationship("ClassRoom")
 
 
 class Test(Base, TimestampMixin):
@@ -32,7 +35,7 @@ class Test(Base, TimestampMixin):
     period_label: Mapped[str] = mapped_column(String(50), nullable=False)  # e.g. "Month 1"
     subject_id: Mapped[int] = mapped_column(ForeignKey("subjects.id"), nullable=False)
     class_id: Mapped[int] = mapped_column(ForeignKey("classes.id"), nullable=False)
-    batch_id: Mapped[int] = mapped_column(ForeignKey("batches.id"), nullable=False)
+    batch_id: Mapped[Optional[int]] = mapped_column(ForeignKey("batches.id"), nullable=True)
     name: Mapped[str] = mapped_column(String(150), nullable=False)
     test_date: Mapped[date] = mapped_column(Date, nullable=False)
     total_marks: Mapped[float] = mapped_column(Float, nullable=False)
@@ -40,6 +43,8 @@ class Test(Base, TimestampMixin):
 
     session = relationship("TestSession")
     subject = relationship("Subject")
+    class_room = relationship("ClassRoom")
+    batch = relationship("Batch")
 
 
 class Marks(Base, TimestampMixin):

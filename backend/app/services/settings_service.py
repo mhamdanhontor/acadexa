@@ -10,7 +10,7 @@ DEFAULTS = {
     "academy_address": "",
     "academy_contact": "",
     "academy_logo_url": "",
-    "attendance_late_counts_as_present": "false",
+    "attendance_late_counts_as_present": "true",
 }
 
 

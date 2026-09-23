@@ -239,7 +239,7 @@ def test_attendance_summary_calculation(client, auth_headers, setup_students):
     assert data["present"] == 2
     assert data["absent"] == 1
     assert data["late"] == 1
-    assert data["percentage"] == 50.0  # 2/4 present, late not counted by default
+    assert data["percentage"] == 75.0  # (2 present + 1 late) / 4 = 75.0% because late is counted as present
 
 
 def test_bulk_attendance_returns_absent_notifications(client, auth_headers, setup_students):

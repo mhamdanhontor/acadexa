@@ -4,6 +4,8 @@ import {
   retryNotification,
   markNotificationSent,
   dispatchPendingNotifications,
+  deletePendingNotifications,
+  deleteNotification,
   listTemplates,
   updateTemplate,
 } from '../api/notifications'
@@ -16,6 +18,7 @@ import ErrorAlert from '../components/ErrorAlert'
 import EmptyState from '../components/EmptyState'
 import StatusBadge from '../components/StatusBadge'
 import Modal from '../components/Modal'
+import ConfirmDialog from '../components/ConfirmDialog'
 import Pagination from '../components/Pagination'
 
 export default function NotificationsPage() {
@@ -99,6 +102,9 @@ export default function NotificationsPage() {
 
   const [dispatching, setDispatching] = useState(false)
   const [dispatchSuccess, setDispatchSuccess] = useState('')
+  const [confirmDeletePendingOpen, setConfirmDeletePendingOpen] = useState(false)
+  const [deletingPending, setDeletingPending] = useState(false)
+  const [deleteJobConfirm, setDeleteJobConfirm] = useState(null)
 
   async function handleDispatchPending() {
     setDispatching(true)
@@ -113,6 +119,33 @@ export default function NotificationsPage() {
       setError(normalizeError(err).message)
     } finally {
       setDispatching(false)
+    }
+  }
+
+  async function handleDeleteAllPending() {
+    setDeletingPending(true)
+    setError(null)
+    try {
+      const res = await deletePendingNotifications()
+      setConfirmDeletePendingOpen(false)
+      setDispatchSuccess(`Successfully deleted ${res.deleted} pending notification(s).`)
+      loadJobs()
+      setTimeout(() => setDispatchSuccess(''), 4000)
+    } catch (err) {
+      setError(normalizeError(err).message)
+    } finally {
+      setDeletingPending(false)
+    }
+  }
+
+  async function handleDeleteSingleJob() {
+    if (!deleteJobConfirm) return
+    try {
+      await deleteNotification(deleteJobConfirm.id)
+      setDeleteJobConfirm(null)
+      loadJobs()
+    } catch (err) {
+      setError(normalizeError(err).message)
     }
   }
 
@@ -181,16 +214,28 @@ export default function NotificationsPage() {
               <option value="MONTHLY_REPORT">Monthly Report</option>
             </select>
             {canManage && (
-              <button
-                type="button"
-                onClick={handleDispatchPending}
-                disabled={dispatching}
-                className="ml-auto bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white text-xs font-semibold px-3.5 py-2 rounded-md flex items-center gap-1.5 shadow-xs transition-colors cursor-pointer"
-                title="Process all pending notification jobs"
-              >
-                <i className="fas fa-paper-plane"></i>
-                {dispatching ? 'Dispatching...' : 'Dispatch All Pending'}
-              </button>
+              <div className="ml-auto flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setConfirmDeletePendingOpen(true)}
+                  disabled={deletingPending || dispatching}
+                  className="bg-red-600 hover:bg-red-700 disabled:opacity-50 text-white text-xs font-semibold px-3 py-2 rounded-md flex items-center gap-1.5 shadow-xs transition-colors cursor-pointer"
+                  title="Delete all pending and retrying notification jobs"
+                >
+                  <i className="fas fa-trash-can"></i>
+                  {deletingPending ? 'Deleting...' : 'Delete All Pending'}
+                </button>
+                <button
+                  type="button"
+                  onClick={handleDispatchPending}
+                  disabled={dispatching || deletingPending}
+                  className="bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white text-xs font-semibold px-3.5 py-2 rounded-md flex items-center gap-1.5 shadow-xs transition-colors cursor-pointer"
+                  title="Process all pending notification jobs"
+                >
+                  <i className="fas fa-paper-plane"></i>
+                  {dispatching ? 'Dispatching...' : 'Dispatch All Pending'}
+                </button>
+              </div>
             )}
           </div>
 
@@ -247,6 +292,13 @@ export default function NotificationsPage() {
                                 Retry
                               </button>
                             )}
+                            <button
+                              onClick={() => setDeleteJobConfirm(j)}
+                              title="Delete notification"
+                              className="text-gray-400 hover:text-red-600 p-1 text-xs transition-colors cursor-pointer"
+                            >
+                              <i className="fas fa-trash-can"></i>
+                            </button>
                           </div>
                         </td>
                       )}
@@ -359,6 +411,28 @@ export default function NotificationsPage() {
           </div>
         )}
       </Modal>
+
+      {/* Confirm Delete All Pending Modal */}
+      <ConfirmDialog
+        open={confirmDeletePendingOpen}
+        title="Delete All Pending Notifications"
+        message="Are you sure you want to delete all pending notification jobs? This will permanently remove all queued messages waiting to be sent. This action cannot be undone."
+        confirmLabel="Delete All Pending"
+        danger={true}
+        onConfirm={handleDeleteAllPending}
+        onCancel={() => setConfirmDeletePendingOpen(false)}
+      />
+
+      {/* Confirm Delete Single Notification Modal */}
+      <ConfirmDialog
+        open={!!deleteJobConfirm}
+        title="Delete Notification"
+        message={`Are you sure you want to delete notification job #${deleteJobConfirm?.id} for student #${deleteJobConfirm?.student_id}?`}
+        confirmLabel="Delete"
+        danger={true}
+        onConfirm={handleDeleteSingleJob}
+        onCancel={() => setDeleteJobConfirm(null)}
+      />
     </div>
   )
 }

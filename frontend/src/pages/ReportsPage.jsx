@@ -1,8 +1,18 @@
 import { useEffect, useState } from 'react'
-import { listReports, generateReports, approveReport, sendReport, downloadReportPath } from '../api/reports'
+import {
+  listReports,
+  generateReports,
+  approveReport,
+  sendReport,
+  approveAndSendReport,
+  approveAndSendAllReports,
+  getMonthEndReminder,
+  downloadReportPath,
+} from '../api/reports'
 import { listClasses, listBatches } from '../api/academicStructure'
 import { normalizeError, downloadFile } from '../api/client'
 import { useAuth } from '../context/AuthContext'
+import { openWhatsApp } from '../utils/whatsapp'
 import PageHeader from '../components/PageHeader'
 import Spinner from '../components/Spinner'
 import ErrorAlert from '../components/ErrorAlert'
@@ -28,12 +38,18 @@ export default function ReportsPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [actionError, setActionError] = useState('')
+  const [successMsg, setSuccessMsg] = useState('')
+
+  const [reminder, setReminder] = useState(null)
 
   const [genModalOpen, setGenModalOpen] = useState(false)
   const [genForm, setGenForm] = useState({ period_start: '', period_end: '', class_id: '', batch_id: '' })
   const [generating, setGenerating] = useState(false)
 
   const [confirmSend, setConfirmSend] = useState(null) // report object
+  const [confirmApproveAndSend, setConfirmApproveAndSend] = useState(null) // report object
+  const [confirmBulkSend, setConfirmBulkSend] = useState(false)
+  const [bulkSending, setBulkSending] = useState(false)
 
   async function loadLookups() {
     try {
@@ -42,6 +58,15 @@ export default function ReportsPage() {
       setBatches(Array.isArray(b) ? b : (b?.items || []))
     } catch (err) {
       setError(normalizeError(err).message)
+    }
+  }
+
+  async function loadReminder() {
+    try {
+      const data = await getMonthEndReminder()
+      setReminder(data)
+    } catch (err) {
+      console.warn('Failed to load month-end reminder:', err)
     }
   }
 
@@ -64,6 +89,7 @@ export default function ReportsPage() {
 
   useEffect(() => {
     loadLookups()
+    loadReminder()
   }, [])
 
   useEffect(() => {
@@ -82,10 +108,13 @@ export default function ReportsPage() {
         class_id: genForm.class_id ? Number(genForm.class_id) : null,
         batch_id: genForm.batch_id ? Number(genForm.batch_id) : null,
       }
-      await generateReports(payload)
+      const res = await generateReports(payload)
       setGenModalOpen(false)
       setGenForm({ period_start: '', period_end: '', class_id: '', batch_id: '' })
+      setSuccessMsg(`Generated ${res.length} report(s) successfully.`)
+      setTimeout(() => setSuccessMsg(''), 4000)
       load()
+      loadReminder()
     } catch (err) {
       setActionError(normalizeError(err).message)
     } finally {
@@ -98,6 +127,7 @@ export default function ReportsPage() {
     try {
       await approveReport(report.id, approve)
       load()
+      loadReminder()
     } catch (err) {
       setActionError(normalizeError(err).message)
     }
@@ -108,150 +138,422 @@ export default function ReportsPage() {
     try {
       await sendReport(report.id)
       setConfirmSend(null)
+      setSuccessMsg(`Report #${report.id} sent successfully via WhatsApp queue.`)
+      setTimeout(() => setSuccessMsg(''), 4000)
       load()
+      loadReminder()
     } catch (err) {
       setActionError(normalizeError(err).message)
       setConfirmSend(null)
     }
   }
 
+  async function handleApproveAndSend(report) {
+    setActionError('')
+    try {
+      await approveAndSendReport(report.id)
+      setConfirmApproveAndSend(null)
+      setSuccessMsg(`Report for ${report.student_name || 'student'} approved & queued for WhatsApp delivery!`)
+      setTimeout(() => setSuccessMsg(''), 4000)
+      load()
+      loadReminder()
+    } catch (err) {
+      setActionError(normalizeError(err).message)
+      setConfirmApproveAndSend(null)
+    }
+  }
+
+  async function handleBulkApproveAndSend() {
+    setBulkSending(true)
+    setActionError('')
+    try {
+      const res = await approveAndSendAllReports()
+      setConfirmBulkSend(false)
+      setSuccessMsg(`Successfully approved and queued ${res.length} report(s) for WhatsApp delivery!`)
+      setTimeout(() => setSuccessMsg(''), 4000)
+      load()
+      loadReminder()
+    } catch (err) {
+      setActionError(normalizeError(err).message)
+    } finally {
+      setBulkSending(false)
+    }
+  }
+
   async function handleDownload(report) {
     setActionError('')
     try {
-      await downloadFile(downloadReportPath(report.id), `report_${report.id}.pdf`)
+      await downloadFile(downloadReportPath(report.id), `monthly_report_${report.student_code || report.id}.pdf`)
     } catch (err) {
       setActionError(normalizeError(err).message)
     }
   }
 
-  const className = (id) => (classes || []).find((c) => c.id === id)?.name || 'All'
-  const batchName = (id) => (batches || []).find((b) => b.id === id)?.name || 'All'
+  function handleOpenWhatsAppDirect(report) {
+    if (!report.whatsapp_number) return
+    const msg =
+      `*MONTHLY PROGRESS REPORT*\n` +
+      `Student: *${report.student_name}* (${report.student_code})\n` +
+      `Period: *${report.period_start} to ${report.period_end}*\n` +
+      `Class: *${report.class_name || className(report.class_id)}* | Batch: *${report.batch_name || batchName(report.batch_id)}*\n\n` +
+      `Your child's official monthly academic and attendance report is ready. Please contact academy administration for inquiries.\n\n` +
+      `*Honor Knowledge Academy*`
+    openWhatsApp(report.whatsapp_number, msg)
+  }
+
+  const className = (id) => (classes || []).find((c) => c.id === id)?.name || 'All Classes'
+  const batchName = (id) => (batches || []).find((b) => b.id === id)?.name || 'All Batches'
 
   return (
-    <div>
+    <div className="space-y-5">
       <PageHeader
-        title="Reports"
-        subtitle="Generate, approve, and send monthly attendance reports"
+        title="Monthly Reports"
+        subtitle="Generate, review, approve, and send student attendance & test performance reports"
         actions={
           canManage && (
-            <button onClick={() => setGenModalOpen(true)} className="bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-medium px-4 py-2 rounded-md">
-              <i className="fas fa-plus mr-2"></i>Generate Reports
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setConfirmBulkSend(true)}
+                className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold px-3.5 py-2 rounded-lg flex items-center gap-1.5 shadow-xs transition-colors cursor-pointer"
+                title="Approve and send all ready monthly reports via WhatsApp"
+              >
+                <i className="fas fa-paper-plane"></i>
+                Approve & Send All
+              </button>
+              <button
+                type="button"
+                onClick={() => setGenModalOpen(true)}
+                className="bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold px-3.5 py-2 rounded-lg flex items-center gap-1.5 shadow-xs transition-colors cursor-pointer"
+              >
+                <i className="fas fa-plus"></i>
+                Generate Reports
+              </button>
+            </div>
           )
         }
       />
 
-      {error && <div className="mb-4"><ErrorAlert message={error} onRetry={load} /></div>}
-      {actionError && <div className="mb-4"><ErrorAlert message={actionError} /></div>}
+      {/* Month-End Reminder Banner */}
+      {reminder && reminder.is_reminder_active && (
+        <div className="rounded-2xl bg-gradient-to-r from-amber-500 via-orange-500 to-amber-600 p-5 text-white shadow-md flex flex-col md:flex-row md:items-center justify-between gap-4 animate-in fade-in">
+          <div className="flex items-center gap-3.5">
+            <div className="w-11 h-11 rounded-xl bg-white/20 backdrop-blur-md flex items-center justify-center text-xl shrink-0">
+              <i className="fas fa-bell"></i>
+            </div>
+            <div>
+              <div className="flex items-center gap-2 mb-0.5">
+                <span className="text-[11px] font-bold uppercase tracking-wider bg-black/20 px-2.5 py-0.5 rounded-full">
+                  Month-End Report Reminder
+                </span>
+                <span className="text-xs text-amber-100 font-medium">
+                  {reminder.days_remaining === 0 ? 'Final day of the month' : `${reminder.days_remaining} day(s) remaining`}
+                </span>
+              </div>
+              <p className="text-sm font-semibold text-white/95">
+                {reminder.message}
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2 shrink-0">
+            <button
+              type="button"
+              onClick={() => {
+                setGenForm({
+                  period_start: reminder.period_start,
+                  period_end: reminder.period_end,
+                  class_id: '',
+                  batch_id: '',
+                })
+                setGenModalOpen(true)
+              }}
+              className="bg-white hover:bg-amber-50 text-amber-900 text-xs font-bold px-3.5 py-2 rounded-xl shadow-xs transition-colors cursor-pointer"
+            >
+              <i className="fas fa-plus mr-1.5"></i>
+              Generate {reminder.month_name}
+            </button>
+            {canManage && (
+              <button
+                type="button"
+                onClick={() => setConfirmBulkSend(true)}
+                className="bg-black/25 hover:bg-black/35 text-white text-xs font-bold px-3.5 py-2 rounded-xl border border-white/20 transition-colors cursor-pointer"
+              >
+                <i className="fas fa-paper-plane mr-1.5"></i>
+                Approve & Send All
+              </button>
+            )}
+          </div>
+        </div>
+      )}
 
-      <div className="bg-white rounded-xl border border-gray-200 mb-4 p-4">
-        <label className="block text-xs font-medium text-gray-500 mb-1">Status</label>
-        <select value={statusFilter} onChange={(e) => { setStatusFilter(e.target.value); setPage(1) }} className="rounded-md border border-gray-300 px-3 py-2 text-sm">
-          <option value="">All</option>
-          <option value="DRAFT">Draft</option>
-          <option value="READY">Ready</option>
-          <option value="APPROVED">Approved</option>
-          <option value="SENT">Sent</option>
-          <option value="FAILED">Failed</option>
-        </select>
+      {error && <ErrorAlert message={error} onRetry={load} />}
+      {actionError && <ErrorAlert message={actionError} />}
+      {successMsg && (
+        <div className="rounded-xl border border-emerald-200 bg-emerald-50 text-emerald-800 px-4 py-3 text-sm flex items-center gap-2 shadow-xs">
+          <i className="fas fa-circle-check"></i>
+          <span>{successMsg}</span>
+        </div>
+      )}
+
+      {/* Filter Toolbar */}
+      <div className="bg-white rounded-xl border border-gray-200 p-4 flex flex-wrap items-center gap-3">
+        <div>
+          <label className="block text-xs font-medium text-gray-500 mb-1">Status Filter</label>
+          <select
+            value={statusFilter}
+            onChange={(e) => {
+              setStatusFilter(e.target.value)
+              setPage(1)
+            }}
+            className="rounded-md border border-gray-300 px-3 py-1.5 text-sm"
+          >
+            <option value="">All Statuses</option>
+            <option value="DRAFT">Draft</option>
+            <option value="READY">Ready for Review</option>
+            <option value="APPROVED">Approved</option>
+            <option value="SENT">Sent</option>
+            <option value="FAILED">Failed</option>
+          </select>
+        </div>
       </div>
 
-      <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+      {/* Reports Table */}
+      <div className="bg-white rounded-xl border border-gray-200 overflow-hidden shadow-xs">
         {loading ? (
-          <div className="flex justify-center py-16"><Spinner size="lg" /></div>
+          <div className="flex justify-center py-16">
+            <Spinner size="lg" />
+          </div>
         ) : (reports || []).length === 0 ? (
-          <EmptyState title="No reports yet" subtitle="Generate reports for a period to get started." icon="fa-chart-column" />
+          <EmptyState
+            title="No reports generated yet"
+            subtitle="Generate monthly reports for any class or period to get started."
+            icon="fa-chart-column"
+            action={
+              canManage && (
+                <button
+                  type="button"
+                  onClick={() => setGenModalOpen(true)}
+                  className="bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold px-4 py-2 rounded-lg mt-2 cursor-pointer"
+                >
+                  <i className="fas fa-plus mr-1.5"></i>
+                  Generate Reports
+                </button>
+              )
+            }
+          />
         ) : (
-          <table className="w-full text-sm">
-            <thead className="bg-gray-50 text-gray-500 text-left">
-              <tr>
-                <th className="px-5 py-3 font-medium">Student ID</th>
-                <th className="px-5 py-3 font-medium">Period</th>
-                <th className="px-5 py-3 font-medium">Class / Batch</th>
-                <th className="px-5 py-3 font-medium">Status</th>
-                <th className="px-5 py-3 font-medium text-right">Actions</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-100">
-              {(reports || []).map((r) => (
-                <tr key={r.id}>
-                  <td className="px-5 py-3 text-gray-600">{r.student_id ?? '—'}</td>
-                  <td className="px-5 py-3 text-gray-600">{r.period_start} → {r.period_end}</td>
-                  <td className="px-5 py-3 text-gray-600">{className(r.class_id)} / {batchName(r.batch_id)}</td>
-                  <td className="px-5 py-3"><StatusBadge status={r.status} /></td>
-                  <td className="px-5 py-3 text-right space-x-3">
-                    {r.file_path && (
-                      <button onClick={() => handleDownload(r)} className="text-indigo-600 hover:text-indigo-800">
-                        Download
-                      </button>
-                    )}
-                    {canManage && (r.status === 'DRAFT' || r.status === 'READY') && (
-                      <button onClick={() => handleApprove(r, true)} className="text-green-600 hover:text-green-800">
-                        Approve
-                      </button>
-                    )}
-                    {canManage && r.status === 'APPROVED' && (
-                      <button onClick={() => setConfirmSend(r)} className="text-blue-600 hover:text-blue-800">
-                        Send
-                      </button>
-                    )}
-                  </td>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="bg-gray-50/80 text-gray-500 text-left border-b border-gray-200">
+                <tr>
+                  <th className="px-5 py-3 font-semibold">Student ID</th>
+                  <th className="px-5 py-3 font-semibold">Student Name</th>
+                  <th className="px-5 py-3 font-semibold">Class & Batch</th>
+                  <th className="px-5 py-3 font-semibold">Period</th>
+                  <th className="px-5 py-3 font-semibold">Status</th>
+                  <th className="px-5 py-3 font-semibold text-right">Actions</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {(reports || []).map((r) => (
+                  <tr key={r.id} className="hover:bg-gray-50/60 transition-colors">
+                    <td className="px-5 py-3.5 font-mono text-xs font-bold text-indigo-700">
+                      {r.student_code || `#${r.student_id}`}
+                    </td>
+                    <td className="px-5 py-3.5 font-medium text-gray-900">
+                      {r.student_name || '—'}
+                    </td>
+                    <td className="px-5 py-3.5 text-gray-600">
+                      <span className="font-medium text-gray-800">{r.class_name || className(r.class_id)}</span>
+                      <span className="text-gray-400 mx-1.5">/</span>
+                      <span className="text-gray-600">{r.batch_name || batchName(r.batch_id)}</span>
+                    </td>
+                    <td className="px-5 py-3.5 text-gray-600 font-mono text-xs">
+                      {r.period_start} → {r.period_end}
+                    </td>
+                    <td className="px-5 py-3.5">
+                      <StatusBadge status={r.status} />
+                    </td>
+                    <td className="px-5 py-3.5 text-right space-x-2">
+                      {/* Download PDF button */}
+                      {r.file_path && (
+                        <button
+                          type="button"
+                          onClick={() => handleDownload(r)}
+                          className="inline-flex items-center gap-1 text-xs font-semibold text-indigo-600 hover:text-indigo-800 px-2 py-1 rounded bg-indigo-50 hover:bg-indigo-100 transition-colors cursor-pointer"
+                          title="Download Beautiful PDF Report"
+                        >
+                          <i className="fas fa-file-pdf"></i>
+                          PDF
+                        </button>
+                      )}
+
+                      {/* Direct WhatsApp Web Sender if phone available */}
+                      {r.whatsapp_number && (
+                        <button
+                          type="button"
+                          onClick={() => handleOpenWhatsAppDirect(r)}
+                          className="inline-flex items-center gap-1 text-xs font-semibold text-emerald-700 hover:text-emerald-900 px-2 py-1 rounded bg-emerald-50 hover:bg-emerald-100 transition-colors cursor-pointer"
+                          title="Open WhatsApp Web with report"
+                        >
+                          <i className="fab fa-whatsapp"></i>
+                          WhatsApp
+                        </button>
+                      )}
+
+                      {/* Approve & Send (Single Click) */}
+                      {canManage && (r.status === 'DRAFT' || r.status === 'READY') && (
+                        <button
+                          type="button"
+                          onClick={() => setConfirmApproveAndSend(r)}
+                          className="inline-flex items-center gap-1 text-xs font-semibold text-white bg-emerald-600 hover:bg-emerald-700 px-2.5 py-1 rounded shadow-2xs transition-colors cursor-pointer"
+                          title="Approve and send report to WhatsApp immediately"
+                        >
+                          <i className="fas fa-paper-plane"></i>
+                          Approve & Send
+                        </button>
+                      )}
+
+                      {/* Step 1: Approve only */}
+                      {canManage && (r.status === 'DRAFT' || r.status === 'READY') && (
+                        <button
+                          type="button"
+                          onClick={() => handleApprove(r, true)}
+                          className="text-xs font-medium text-gray-600 hover:text-gray-900 transition-colors cursor-pointer"
+                        >
+                          Approve
+                        </button>
+                      )}
+
+                      {/* Step 2: Send if approved */}
+                      {canManage && r.status === 'APPROVED' && (
+                        <button
+                          type="button"
+                          onClick={() => setConfirmSend(r)}
+                          className="inline-flex items-center gap-1 text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 px-2.5 py-1 rounded shadow-2xs transition-colors cursor-pointer"
+                        >
+                          <i className="fas fa-paper-plane"></i>
+                          Send
+                        </button>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         )}
         <Pagination page={page} totalPages={totalPages} total={total} pageSize={pageSize} onPageChange={setPage} />
       </div>
 
+      {/* Modal: Generate Reports */}
       <Modal open={genModalOpen} title="Generate Monthly Reports" onClose={() => setGenModalOpen(false)}>
         <form onSubmit={handleGenerate} className="space-y-4">
           {actionError && <ErrorAlert message={actionError} />}
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Period Start</label>
-              <input required type="date" value={genForm.period_start} onChange={(e) => setGenForm({ ...genForm, period_start: e.target.value })}
-                className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm" />
+              <input
+                required
+                type="date"
+                value={genForm.period_start}
+                onChange={(e) => setGenForm({ ...genForm, period_start: e.target.value })}
+                className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              />
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Period End</label>
-              <input required type="date" value={genForm.period_end} onChange={(e) => setGenForm({ ...genForm, period_end: e.target.value })}
-                className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm" />
+              <input
+                required
+                type="date"
+                value={genForm.period_end}
+                onChange={(e) => setGenForm({ ...genForm, period_end: e.target.value })}
+                className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              />
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Class (optional)</label>
-              <select value={genForm.class_id} onChange={(e) => setGenForm({ ...genForm, class_id: e.target.value })}
-                className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm">
+              <select
+                value={genForm.class_id}
+                onChange={(e) => setGenForm({ ...genForm, class_id: e.target.value })}
+                className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              >
                 <option value="">All Classes</option>
-                {classes.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+                {classes.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name}
+                  </option>
+                ))}
               </select>
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Batch (optional)</label>
-              <select value={genForm.batch_id} onChange={(e) => setGenForm({ ...genForm, batch_id: e.target.value })}
-                className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm">
+              <select
+                value={genForm.batch_id}
+                onChange={(e) => setGenForm({ ...genForm, batch_id: e.target.value })}
+                className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              >
                 <option value="">All Batches</option>
-                {batches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
+                {batches.map((b) => (
+                  <option key={b.id} value={b.id}>
+                    {b.name}
+                  </option>
+                ))}
               </select>
             </div>
           </div>
-          <p className="text-xs text-gray-400">Generates one report per matching student in status READY. Already APPROVED/SENT reports for the period are not overwritten.</p>
+          <p className="text-xs text-gray-500 bg-gray-50 p-2.5 rounded-lg border border-gray-200">
+            <i className="fas fa-info-circle mr-1 text-indigo-600"></i>
+            Generates one report per matching student in status <strong>READY</strong> with complete monthly attendance
+            and all test marks. Already APPROVED or SENT reports will not be overwritten.
+          </p>
           <div className="flex justify-end gap-3 pt-2">
-            <button type="button" onClick={() => setGenModalOpen(false)} className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-md">Cancel</button>
-            <button type="submit" disabled={generating} className="px-4 py-2 text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 rounded-md disabled:opacity-60">
-              {generating ? 'Generating...' : 'Generate'}
+            <button
+              type="button"
+              onClick={() => setGenModalOpen(false)}
+              className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-md cursor-pointer"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={generating}
+              className="px-4 py-2 text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 rounded-md disabled:opacity-60 cursor-pointer"
+            >
+              {generating ? 'Generating...' : 'Generate Reports'}
             </button>
           </div>
         </form>
       </Modal>
 
+      {/* Confirm Send Modal */}
       <ConfirmDialog
         open={!!confirmSend}
         title="Send Report"
-        message={`This will queue a WhatsApp notification to send the approved report for student #${confirmSend?.student_id}. This action cannot be undone. Continue?`}
-        confirmLabel="Send"
+        message={`This will queue a WhatsApp notification to send the approved report for ${confirmSend?.student_name || `student #${confirmSend?.student_id}`} to ${confirmSend?.whatsapp_number || 'their registered number'}. Continue?`}
+        confirmLabel="Send to WhatsApp"
         onConfirm={() => handleSend(confirmSend)}
         onCancel={() => setConfirmSend(null)}
+      />
+
+      {/* Confirm Approve & Send Modal */}
+      <ConfirmDialog
+        open={!!confirmApproveAndSend}
+        title="Approve & Send Report"
+        message={`This will mark the monthly report for ${confirmApproveAndSend?.student_name || `student #${confirmApproveAndSend?.student_id}`} as APPROVED and immediately queue WhatsApp delivery to ${confirmApproveAndSend?.whatsapp_number || 'their registered number'}. Continue?`}
+        confirmLabel="Approve & Send"
+        onConfirm={() => handleApproveAndSend(confirmApproveAndSend)}
+        onCancel={() => setConfirmApproveAndSend(null)}
+      />
+
+      {/* Confirm Bulk Approve & Send All */}
+      <ConfirmDialog
+        open={confirmBulkSend}
+        title="Approve & Send All Reports"
+        message="Are you sure you want to approve and send all generated monthly reports via WhatsApp? Each student's guardian will receive their monthly attendance and test performance summary."
+        confirmLabel={bulkSending ? 'Processing...' : 'Approve & Send All'}
+        onConfirm={handleBulkApproveAndSend}
+        onCancel={() => setConfirmBulkSend(false)}
       />
     </div>
   )

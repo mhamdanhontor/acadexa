@@ -311,7 +311,7 @@ def calculate_attendance_summary(db: Session, student_id: int, date_from: date, 
     late = sum(1 for r in rows if r.status == AttendanceStatus.LATE)
     leave = sum(1 for r in rows if r.status == AttendanceStatus.LEAVE)
 
-    late_counts_as_present = (get_setting(db, "attendance_late_counts_as_present") or "false").lower() == "true"
+    late_counts_as_present = (get_setting(db, "attendance_late_counts_as_present") or "true").lower() == "true"
     effective_present = present + (late if late_counts_as_present else 0)
     percentage = round((effective_present / total) * 100, 2) if total > 0 else 0.0
 
@@ -332,7 +332,7 @@ def get_all_enrolled_attendance_roster(db: Session, date_: date) -> list[AllEnro
     students = (
         db.query(Student)
         .filter(Student.is_active.is_(True))
-        .order_by(Student.name.asc())
+        .order_by(Student.student_code.asc(), Student.id.asc())
         .all()
     )
     if not students:
