@@ -5,7 +5,8 @@ import StatusBadge from './StatusBadge'
 import { listAttendance, getAttendanceSummary } from '../api/attendance'
 import { listMarks } from '../api/academics'
 import { normalizeError } from '../api/client'
-import { openWhatsApp } from '../utils/whatsapp'
+import { openWhatsApp, cleanPhoneNumber, getStoredWhatsAppTarget, setStoredWhatsAppTarget } from '../utils/whatsapp'
+import { downloadFeeVoucherPdf, printFeeVoucherPdf, getFormattedDueDate } from '../utils/feeVoucherPdf'
 
 export default function StudentDetailModal({ open, onClose, student }) {
   const [activeTab, setActiveTab] = useState('attendance') // 'attendance' | 'marks' | 'fees'
@@ -21,8 +22,12 @@ export default function StudentDetailModal({ open, onClose, student }) {
 
   // Quick fee receipt state
   const [feeAmount, setFeeAmount] = useState('5000')
+  const [fineAmount, setFineAmount] = useState('200')
   const [feeMonth, setFeeMonth] = useState('September 2026')
   const [receiptNo, setReceiptNo] = useState(`REC-${Math.floor(1000 + Math.random() * 9000)}`)
+  const [target, setTarget] = useState(getStoredWhatsAppTarget() || 'desktop')
+  const [voucherSentNotice, setVoucherSentNotice] = useState(false)
+  const [downloadedFilename, setDownloadedFilename] = useState('')
 
   async function loadStudentHistory() {
     if (!student?.id) return
@@ -68,37 +73,100 @@ export default function StudentDetailModal({ open, onClose, student }) {
 
   if (!student) return null
 
+  const tuitionNum = Number(feeAmount) || 0
+  const fineNum = Number(fineAmount) || 0
+  const totalAmount = tuitionNum + fineNum
+  const dueDate = getFormattedDueDate(feeMonth)
+  const today = new Date().toISOString().split('T')[0]
+
+  function handleTargetChange(newTarget) {
+    setTarget(newTarget)
+    setStoredWhatsAppTarget(newTarget)
+  }
+
+  function getVoucherPayload() {
+    return {
+      student,
+      receiptNo,
+      feeMonth,
+      dueDate,
+      today,
+      feeAmount: tuitionNum,
+      fineAmount: fineNum,
+      totalPaid: totalAmount,
+    }
+  }
+
   function handleSendFeeReceipt() {
     const academyName = 'Honor Knowledge Academy'
-    const today = new Date().toISOString().split('T')[0]
     const guardian = student.guardian_name || 'Parent/Guardian'
     const guardianUr = student.guardian_name_ur || guardian
     const studentNameUr = student.name_ur || student.name
 
+    // 1. Generate & download official PDF voucher with Honor Knowledge Academy PAID stamp & red fine
+    const payload = getVoucherPayload()
+    const savedFile = downloadFeeVoucherPdf(payload)
+    setDownloadedFilename(savedFile)
+    setVoucherSentNotice(true)
+
+    // 2. Prepare bilingual message formatted for parents
+    const fineTextEn =
+      fineNum > 0
+        ? `🔴 *Late Fine (After 10th):* PKR ${fineNum.toLocaleString()} (Applied & Included in Red on Voucher)\n`
+        : ''
+    const fineTextUr =
+      fineNum > 0
+        ? `🔴 *لیٹ فیس / جرمانہ:* PKR ${fineNum.toLocaleString()} (رسید پر سرخ رنگ میں شامل)\n`
+        : ''
+
     const msg =
-      `*FEE PAYMENT RECEIPT*\n*Assalam-o-Alaikum*\n\n` +
+      `*HONOR KNOWLEDGE ACADEMY*\n` +
+      `*OFFICIAL FEE RECEIPT & VOUCHER*\n` +
+      `*Assalam-o-Alaikum*\n\n` +
       `Dear Parent/Guardian (*${guardian}*),\n\n` +
-      `Fee payment confirmation for *${student.name}*:\n\n` +
-      `💵 *Amount Paid:* PKR ${feeAmount}\n` +
-      `📅 *Month/Period:* ${feeMonth}\n` +
+      `Fee payment confirmation for *${student.name}* (*${student.student_code}*):\n\n` +
+      `💵 *Monthly Tuition Fee:* PKR ${tuitionNum.toLocaleString()}\n` +
+      `${fineTextEn}` +
+      `💰 *Total Amount Paid:* PKR ${totalAmount.toLocaleString()}\n` +
+      `📅 *Billing Month:* ${feeMonth}\n` +
+      `🗓 *Last Fee Date (Due Date):* 10th of each month (${dueDate})\n` +
       `🧾 *Receipt #:* ${receiptNo}\n` +
-      `🗓 *Payment Date:* ${today}\n\n` +
-      `Thank you for your timely payment and continued support.\n\n` +
+      `🗓 *Payment Date:* ${today}\n` +
+      `✅ *Status:* PAID (Honor Knowledge Academy Official Stamp Applied)\n\n` +
+      `📎 *Official PDF Fee Voucher has been generated and saved to your computer.* Please find the attached PDF voucher file.\n\n` +
+      `Thank you for your timely payment and continued cooperation.\n\n` +
       `Best regards,\n` +
       `*${academyName}*\n\n` +
       `-----------------------------------\n\n` +
       `*فیس وصولی کی رسید*\n*السلام علیکم*\n\n` +
       `محترم والدین / سرپرست (*${guardianUr}*)،\n\n` +
       `آپ کے بچے *${studentNameUr}* کی فیس کی ادائیگی کی تصدیق درج ذیل ہے:\n\n` +
-      `💵 *وصول شدہ رقم:* PKR ${feeAmount}\n` +
+      `💵 *ٹیوشن فیس:* PKR ${tuitionNum.toLocaleString()}\n` +
+      `${fineTextUr}` +
+      `💰 *کل وصول شدہ رقم:* PKR ${totalAmount.toLocaleString()}\n` +
       `📅 *ماہ:* ${feeMonth}\n` +
+      `🗓 *فیس کی آخری تاریخ:* ہر ماہ کی 10 تاریخ (${dueDate})\n` +
       `🧾 *رسید نمبر:* #${receiptNo}\n` +
-      `🗓 *تاریخِ ادائیگی:* ${today}\n\n` +
-      `بروقت ادائیگی اور تعاون کا شکریہ!\n\n` +
+      `🗓 *تاریخِ ادائیگی:* ${today}\n` +
+      `✅ *حیثیت:* مکمل ادا شدہ (Honor Knowledge Academy کی مہر تصدیق کے ساتھ)\n\n` +
+      `📎 آپ کے بچے کا باضابطہ PDF فیس واؤچر تیار کر دیا گیا ہے۔\n\n` +
       `والسلام،\n` +
       `*${academyName}*`
 
-    openWhatsApp(student.whatsapp_number, msg, 'web')
+    // 3. Open WhatsApp Desktop (or selected target)
+    openWhatsApp(student.whatsapp_number, msg, target)
+  }
+
+  function handleDownloadOnlyPdf() {
+    const payload = getVoucherPayload()
+    const savedFile = downloadFeeVoucherPdf(payload)
+    setDownloadedFilename(savedFile)
+    setVoucherSentNotice(true)
+  }
+
+  function handlePrintPdf() {
+    const payload = getVoucherPayload()
+    printFeeVoucherPdf(payload)
   }
 
   return (
@@ -342,48 +410,176 @@ export default function StudentDetailModal({ open, onClose, student }) {
 
             {/* TAB 3: FEES */}
             {activeTab === 'fees' && (
-              <div className="space-y-5">
-                <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-xs text-amber-800 flex items-start gap-3">
-                  <i className="fa-solid fa-info-circle text-amber-600 text-base shrink-0 mt-0.5"></i>
-                  <div>
-                    <strong className="font-semibold block mb-0.5">Fee Ledger Note:</strong>
-                    A complete database fee-tracking ledger (with monthly due dates and student arrears) can be connected. In the meantime, you can instantly dispatch official bilingual WhatsApp fee receipts to parents using the card below!
+              <div className="space-y-6">
+                {/* Notice / Guidance Toast after sending */}
+                {voucherSentNotice && (
+                  <div className="bg-emerald-50 border-2 border-emerald-400 rounded-2xl p-4 shadow-sm flex items-start gap-3.5 animate-fadeIn">
+                    <div className="w-8 h-8 rounded-full bg-emerald-600 text-white flex items-center justify-center shrink-0 mt-0.5">
+                      <i className="fa-solid fa-check text-sm"></i>
+                    </div>
+                    <div className="flex-1">
+                      <h4 className="font-bold text-emerald-950 text-sm">
+                        PDF Fee Voucher Generated & WhatsApp Desktop Launched!
+                      </h4>
+                      <p className="text-xs text-emerald-800 mt-0.5 leading-relaxed">
+                        The official PDF voucher{' '}
+                        <strong className="font-mono bg-emerald-100 px-1 py-0.5 rounded text-emerald-900">
+                          {downloadedFilename || 'Fee_Receipt_HONOR.pdf'}
+                        </strong>{' '}
+                        was automatically saved to your <strong className="underline">Downloads</strong> folder.
+                        WhatsApp Desktop is now open with the parent's chat — simply drag-and-drop or attach the
+                        downloaded PDF into WhatsApp Desktop and press Enter to send!
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setVoucherSentNotice(false)}
+                      className="text-emerald-700 hover:text-emerald-950 p-1 text-sm"
+                      title="Dismiss notice"
+                    >
+                      <i className="fa-solid fa-xmark"></i>
+                    </button>
                   </div>
-                </div>
+                )}
 
-                <div className="bg-white border border-gray-200 rounded-xl p-5 shadow-xs">
-                  <h4 className="font-bold text-gray-900 text-sm mb-3 flex items-center gap-2">
-                    <i className="fa-solid fa-paper-plane text-emerald-600"></i>
-                    Send WhatsApp Fee Receipt to Parent
-                  </h4>
-
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4">
+                {/* Voucher Configuration & Options Box */}
+                <div className="bg-white border border-gray-200 rounded-2xl p-5 shadow-xs space-y-4">
+                  <div className="flex flex-wrap items-center justify-between gap-3 border-b border-gray-100 pb-3">
                     <div>
-                      <label className="block text-xs font-medium text-gray-600 mb-1">
-                        Amount Paid (PKR)
+                      <h4 className="font-bold text-gray-900 text-sm flex items-center gap-2">
+                        <i className="fa-solid fa-receipt text-indigo-600"></i>
+                        <span>Honor Knowledge Academy — Fee Receipt Settings</span>
+                      </h4>
+                      <p className="text-xs text-gray-500 mt-0.5">
+                        Configure voucher values. Due date is fixed as the 10th of each month with red late fine.
+                      </p>
+                    </div>
+
+                    {/* WhatsApp Target Selector (Defaults to WhatsApp Desktop) */}
+                    <div className="flex items-center gap-1.5 bg-gray-100 p-1 rounded-xl text-xs font-medium">
+                      <span className="text-gray-500 px-2 font-semibold">Open In:</span>
+                      <button
+                        type="button"
+                        onClick={() => handleTargetChange('desktop')}
+                        className={`px-3 py-1.5 rounded-lg transition-all flex items-center gap-1.5 ${
+                          target === 'desktop'
+                            ? 'bg-emerald-600 text-white font-bold shadow-xs'
+                            : 'text-gray-700 hover:bg-gray-200'
+                        }`}
+                        title="Opens Windows WhatsApp Desktop application via whatsapp://"
+                      >
+                        <i className="fa-solid fa-desktop text-xs"></i>
+                        <span>WhatsApp Desktop</span>
+                        <span className="text-[10px] bg-emerald-800/40 px-1 py-0.2 rounded font-normal">Active</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => handleTargetChange('web')}
+                        className={`px-2.5 py-1.5 rounded-lg transition-all flex items-center gap-1.5 ${
+                          target === 'web'
+                            ? 'bg-emerald-600 text-white font-bold shadow-xs'
+                            : 'text-gray-700 hover:bg-gray-200'
+                        }`}
+                        title="Opens web.whatsapp.com in your default browser"
+                      >
+                        <i className="fa-solid fa-globe text-xs"></i>
+                        <span>Web</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => handleTargetChange('universal')}
+                        className={`px-2.5 py-1.5 rounded-lg transition-all flex items-center gap-1.5 ${
+                          target === 'universal'
+                            ? 'bg-emerald-600 text-white font-bold shadow-xs'
+                            : 'text-gray-700 hover:bg-gray-200'
+                        }`}
+                        title="Direct wa.me link"
+                      >
+                        <i className="fa-solid fa-mobile-screen text-xs"></i>
+                        <span>wa.me</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Input Fields Grid */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                    <div>
+                      <label className="block text-xs font-semibold text-gray-700 mb-1">
+                        Monthly Tuition Fee (PKR)
                       </label>
                       <input
-                        type="text"
+                        type="number"
                         value={feeAmount}
                         onChange={(e) => setFeeAmount(e.target.value)}
-                        placeholder="e.g. 5,000"
-                        className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                        placeholder="e.g. 5000"
+                        className="w-full rounded-xl border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 font-semibold text-gray-900"
                       />
                     </div>
+
+                    {/* Fine Applied (RED) Input & Quick Toggles */}
                     <div>
-                      <label className="block text-xs font-medium text-gray-600 mb-1">
-                        Month / Period
+                      <div className="flex items-center justify-between mb-1">
+                        <label className="text-xs font-bold text-red-600 flex items-center gap-1">
+                          <i className="fa-solid fa-circle-exclamation text-red-500"></i>
+                          <span>Late Fee / Fine (PKR)</span>
+                        </label>
+                        <span className="text-[10px] text-red-700 font-bold bg-red-100 px-1.5 py-0.5 rounded">
+                          RED IN VOUCHER
+                        </span>
+                      </div>
+                      <input
+                        type="number"
+                        value={fineAmount}
+                        onChange={(e) => setFineAmount(e.target.value)}
+                        placeholder="e.g. 200"
+                        className="w-full rounded-xl border-2 border-red-300 bg-red-50/40 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-red-500 font-bold text-red-700"
+                      />
+                      <div className="flex items-center gap-1.5 mt-1.5">
+                        <button
+                          type="button"
+                          onClick={() => setFineAmount('200')}
+                          className="text-[11px] px-2 py-0.5 rounded bg-red-100 text-red-800 hover:bg-red-200 font-semibold"
+                        >
+                          + PKR 200
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setFineAmount('500')}
+                          className="text-[11px] px-2 py-0.5 rounded bg-red-100 text-red-800 hover:bg-red-200 font-semibold"
+                        >
+                          + PKR 500
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setFineAmount('0')}
+                          className="text-[11px] px-2 py-0.5 rounded bg-gray-100 text-gray-700 hover:bg-gray-200"
+                        >
+                          Waive (0)
+                        </button>
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-semibold text-gray-700 mb-1">
+                        Billing Month / Period
                       </label>
                       <input
                         type="text"
                         value={feeMonth}
                         onChange={(e) => setFeeMonth(e.target.value)}
                         placeholder="e.g. September 2026"
-                        className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                        className="w-full rounded-xl border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 font-medium text-gray-900"
                       />
+                      <div className="text-[11px] text-indigo-700 font-semibold mt-1 flex items-center gap-1">
+                        <i className="fa-solid fa-calendar-check"></i>
+                        <span>Due Date: {dueDate}</span>
+                      </div>
                     </div>
+
                     <div>
-                      <label className="block text-xs font-medium text-gray-600 mb-1">
+                      <label className="block text-xs font-semibold text-gray-700 mb-1">
                         Receipt Number
                       </label>
                       <input
@@ -391,19 +587,327 @@ export default function StudentDetailModal({ open, onClose, student }) {
                         value={receiptNo}
                         onChange={(e) => setReceiptNo(e.target.value)}
                         placeholder="e.g. REC-1042"
-                        className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 font-mono"
+                        className="w-full rounded-xl border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 font-mono text-gray-900 font-bold"
                       />
                     </div>
                   </div>
 
-                  <button
-                    type="button"
-                    onClick={handleSendFeeReceipt}
-                    className="bg-emerald-600 hover:bg-emerald-700 text-white font-medium text-xs px-4 py-2.5 rounded-xl flex items-center gap-2 shadow-xs transition-colors"
-                  >
-                    <i className="fa-brands fa-whatsapp text-sm"></i>
-                    <span>Send Bilingual Fee Receipt via WhatsApp</span>
-                  </button>
+                  {/* Prominent Due Date Banner */}
+                  <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-xl p-3.5 flex flex-wrap items-center justify-between gap-3">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-xl bg-blue-600 text-white flex items-center justify-center font-bold text-lg shadow-xs">
+                        10
+                      </div>
+                      <div>
+                        <div className="text-xs font-bold text-blue-950 uppercase tracking-wide">
+                          Official Academy Policy — Last Fee Date
+                        </div>
+                        <div className="text-sm font-extrabold text-blue-800">
+                          Last Fee Date: 10th of each month ({dueDate})
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="text-right text-xs">
+                      <span className="text-gray-500">Total Payable:</span>{' '}
+                      <strong className="text-base font-black text-gray-900">
+                        PKR {totalAmount.toLocaleString()}
+                      </strong>{' '}
+                      {fineNum > 0 && (
+                        <span className="text-red-600 font-bold text-xs ml-1">
+                          (incl. PKR {fineNum.toLocaleString()} late fine in red)
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                {/* LIVE VOUCHER PREVIEW CONTAINER (MATCHES PRINTED VOUCHER) */}
+                <div className="border-2 border-indigo-200 rounded-2xl overflow-hidden shadow-md bg-white">
+                  {/* Voucher Header Banner */}
+                  <div className="bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 text-white p-5 border-b-4 border-amber-500 relative">
+                    <div className="flex flex-wrap items-center justify-between gap-4">
+                      <div className="flex items-center gap-3.5">
+                        <div className="w-12 h-12 rounded-2xl bg-amber-500/20 border border-amber-400/40 text-amber-300 flex items-center justify-center text-2xl shadow-inner">
+                          <i className="fa-solid fa-graduation-cap"></i>
+                        </div>
+                        <div>
+                          <h3 className="text-lg font-black tracking-wider text-white">
+                            HONOR KNOWLEDGE ACADEMY
+                          </h3>
+                          <p className="text-xs text-indigo-200 font-medium tracking-wide">
+                            OFFICIAL STUDENT FEE PAYMENT VOUCHER & RECEIPT • SESSION 2026-2027
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-2">
+                        <span className="bg-amber-500 text-slate-950 text-xs font-black uppercase px-3 py-1 rounded-lg tracking-wider shadow-xs">
+                          Student Copy
+                        </span>
+                        <span className="bg-emerald-500 text-white text-xs font-bold uppercase px-2.5 py-1 rounded-lg shadow-xs flex items-center gap-1">
+                          <i className="fa-solid fa-check-circle"></i>
+                          <span>Status: PAID</span>
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Voucher Body */}
+                  <div className="p-6 space-y-5 bg-gradient-to-b from-white to-slate-50/50">
+                    {/* Voucher Metadata Bar */}
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 bg-slate-100/80 p-3 rounded-xl border border-slate-200 text-xs">
+                      <div>
+                        <span className="text-gray-500 block text-[10px] font-semibold uppercase">Receipt No:</span>
+                        <span className="font-mono font-bold text-gray-900">{receiptNo}</span>
+                      </div>
+                      <div>
+                        <span className="text-gray-500 block text-[10px] font-semibold uppercase">Billing Month:</span>
+                        <span className="font-bold text-gray-900">{feeMonth}</span>
+                      </div>
+                      <div>
+                        <span className="text-gray-500 block text-[10px] font-semibold uppercase">Payment Date:</span>
+                        <span className="font-bold text-gray-900">{today}</span>
+                      </div>
+                      <div className="bg-indigo-50 border border-indigo-200 rounded-lg px-2 py-1">
+                        <span className="text-indigo-600 block text-[10px] font-bold uppercase">
+                          Last Fee Date:
+                        </span>
+                        <span className="font-black text-indigo-900 text-xs">10th of Month ({dueDate})</span>
+                      </div>
+                    </div>
+
+                    {/* Student Information Box */}
+                    <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 text-xs">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-y-2 gap-x-6">
+                        <div className="flex items-center justify-between border-b border-slate-200 pb-1.5">
+                          <span className="text-gray-500 font-semibold">Student Name:</span>
+                          <span className="font-bold text-gray-900 text-sm flex items-center gap-2">
+                            <span>{student.name}</span>
+                            {student.name_ur && (
+                              <span className="text-xs text-indigo-700 font-serif">({student.name_ur})</span>
+                            )}
+                          </span>
+                        </div>
+                        <div className="flex items-center justify-between border-b border-slate-200 pb-1.5">
+                          <span className="text-gray-500 font-semibold">Roll / ID Number:</span>
+                          <span className="font-mono font-bold text-indigo-700">{student.student_code}</span>
+                        </div>
+                        <div className="flex items-center justify-between border-b border-slate-200 pb-1.5">
+                          <span className="text-gray-500 font-semibold">Class / Batch:</span>
+                          <span className="font-bold text-gray-800">
+                            {student.class_room?.name || '—'} / {student.batch?.name || '—'}
+                          </span>
+                        </div>
+                        <div className="flex items-center justify-between border-b border-slate-200 pb-1.5">
+                          <span className="text-gray-500 font-semibold">Guardian:</span>
+                          <span className="font-bold text-gray-800">
+                            {student.guardian_name || '—'}{' '}
+                            {student.guardian_name_ur && (
+                              <span className="text-gray-500 font-serif">({student.guardian_name_ur})</span>
+                            )}
+                          </span>
+                        </div>
+                        <div className="flex items-center justify-between">
+                          <span className="text-gray-500 font-semibold">WhatsApp Number:</span>
+                          <span className="font-bold text-emerald-700 flex items-center gap-1">
+                            <i className="fa-brands fa-whatsapp text-sm"></i>
+                            <span>{student.whatsapp_number}</span>
+                          </span>
+                        </div>
+                        <div className="flex items-center justify-between">
+                          <span className="text-gray-500 font-semibold">Payment Mode:</span>
+                          <span className="font-semibold text-gray-800">Cash / Verified Online</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Breakdown Table with RED Fine */}
+                    <div className="border border-slate-200 rounded-xl overflow-hidden shadow-xs">
+                      <table className="w-full text-left text-xs">
+                        <thead className="bg-slate-900 text-white font-bold uppercase text-[11px]">
+                          <tr>
+                            <th className="px-4 py-2.5 w-12">#</th>
+                            <th className="px-4 py-2.5">Fee Description</th>
+                            <th className="px-4 py-2.5">Due Rule & Terms</th>
+                            <th className="px-4 py-2.5 text-right">Amount (PKR)</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100 font-medium">
+                          <tr className="hover:bg-slate-50">
+                            <td className="px-4 py-3 text-gray-400 font-bold">01</td>
+                            <td className="px-4 py-3 font-semibold text-gray-800">
+                              Monthly Tuition Fee ({feeMonth})
+                            </td>
+                            <td className="px-4 py-3 text-gray-500">Standard Academic Monthly Fee</td>
+                            <td className="px-4 py-3 text-right font-bold text-gray-900">
+                              PKR {tuitionNum.toLocaleString()}
+                            </td>
+                          </tr>
+
+                          {/* LATE FINE ROW IN VIBRANT RED */}
+                          <tr className={fineNum > 0 ? 'bg-red-50/70 border-y border-red-200' : 'text-gray-400'}>
+                            <td className={`px-4 py-3 font-bold ${fineNum > 0 ? 'text-red-600' : 'text-gray-400'}`}>
+                              02
+                            </td>
+                            <td className="px-4 py-3">
+                              <div className="flex items-center gap-2">
+                                <span className={fineNum > 0 ? 'font-bold text-red-600' : 'text-gray-500'}>
+                                  Late Fee / Fine (After 10th of Month)
+                                </span>
+                                {fineNum > 0 && (
+                                  <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-red-600 text-white tracking-wider animate-pulse">
+                                    APPLIED IN RED
+                                  </span>
+                                )}
+                              </div>
+                            </td>
+                            <td className={`px-4 py-3 text-xs ${fineNum > 0 ? 'text-red-700 font-medium' : 'text-gray-400'}`}>
+                              {fineNum > 0
+                                ? '⚠️ Fee received after 10th due date — fine applied'
+                                : 'Paid on or before 10th of month (Waived)'}
+                            </td>
+                            <td className={`px-4 py-3 text-right font-black text-sm ${fineNum > 0 ? 'text-red-600' : 'text-gray-400'}`}>
+                              {fineNum > 0 ? `+ PKR ${fineNum.toLocaleString()}` : 'PKR 0'}
+                            </td>
+                          </tr>
+
+                          {/* TOTAL ROW */}
+                          <tr className="bg-slate-900 text-white font-bold">
+                            <td colSpan="2" className="px-4 py-3 text-sm">
+                              <span className="uppercase tracking-wider">Total Amount Paid</span>
+                              <span className="ml-3 px-2.5 py-0.5 rounded-md text-[10px] bg-emerald-500 text-white uppercase font-black">
+                                Status: PAID
+                              </span>
+                            </td>
+                            <td className="px-4 py-3 text-xs text-amber-300 font-normal">
+                              Paid in full & stamped
+                            </td>
+                            <td className="px-4 py-3 text-right text-base text-amber-400 font-black">
+                              PKR {totalAmount.toLocaleString()}
+                            </td>
+                          </tr>
+                        </tbody>
+                      </table>
+                    </div>
+
+                    {/* RED NOTICE BOX & OFFICIAL RUBBER STAMP */}
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-center pt-2">
+                      <div className="md:col-span-2">
+                        {/* Red Notice Box */}
+                        <div className="bg-red-50 border-2 border-red-300 rounded-xl p-3.5 text-xs text-red-800 space-y-1">
+                          <div className="font-extrabold text-red-700 flex items-center gap-1.5 uppercase tracking-wide text-[11px]">
+                            <i className="fa-solid fa-triangle-exclamation text-red-600 text-sm"></i>
+                            <span>Academy Fee Policy & Last Date Rule</span>
+                          </div>
+                          <p className="leading-relaxed">
+                            <strong>1. Due Date Rule:</strong> The last fee submission date is strictly the{' '}
+                            <span className="underline font-bold">10th of each month ({dueDate})</span>.
+                          </p>
+                          <p className="leading-relaxed text-red-900">
+                            <strong>2. Fine Application:</strong>{' '}
+                            {fineNum > 0 ? (
+                              <span className="font-bold text-red-700">
+                                A late payment fine of PKR {fineNum.toLocaleString()} is included on this voucher in
+                                red due to payment after the 10th.
+                              </span>
+                            ) : (
+                              'Payments submitted on or prior to the 10th avoid the late fine.'
+                            )}
+                          </p>
+                        </div>
+                      </div>
+
+                      {/* AUTHENTIC "HONOR KNOWLEDGE ACADEMY" PAID RUBBER STAMP */}
+                      <div className="flex flex-col items-center justify-center relative py-2">
+                        <div className="transform -rotate-12 select-none pointer-events-none transition-transform hover:rotate-0 duration-300">
+                          <div className="w-32 h-32 rounded-full border-4 border-emerald-600 border-dashed p-1 flex items-center justify-center bg-emerald-50/30 shadow-xs">
+                            <div className="w-full h-full rounded-full border-2 border-emerald-700 flex flex-col items-center justify-center text-center p-1 text-emerald-800 font-sans">
+                              <span className="text-[7.5px] font-black tracking-wider uppercase text-emerald-700">
+                                Honor Knowledge
+                              </span>
+                              <span className="text-[7px] font-black uppercase text-emerald-700 -mt-0.5">
+                                Academy
+                              </span>
+                              <div className="w-20 h-0.5 bg-emerald-700 my-0.5"></div>
+                              <span className="text-sm font-black tracking-widest text-emerald-700 uppercase drop-shadow-xs">
+                                ★ PAID ★
+                              </span>
+                              <div className="w-20 h-0.5 bg-emerald-700 my-0.5"></div>
+                              <span className="text-[6.5px] font-bold text-emerald-800 uppercase">
+                                Verified & Signed
+                              </span>
+                              <span className="text-[6px] font-mono text-emerald-700">{today}</span>
+                            </div>
+                          </div>
+                        </div>
+                        <span className="text-[10px] text-emerald-800 font-bold mt-1 tracking-wide">
+                          Official Academy Paid Stamp
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Signatures Line */}
+                    <div className="flex justify-between items-end pt-4 border-t border-slate-200 text-xs text-gray-500">
+                      <div className="text-center">
+                        <div className="w-40 border-b border-gray-400 mb-1"></div>
+                        <span>Cashier / Accounts Officer</span>
+                      </div>
+                      <div className="text-[10px] text-gray-400 italic">
+                        Computer-generated official fee voucher. Valid upon stamp verification.
+                      </div>
+                      <div className="text-center">
+                        <div className="w-40 border-b border-gray-400 mb-1"></div>
+                        <span>Authorized Signatory</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* ACTION BUTTONS BAR */}
+                <div className="flex flex-wrap items-center justify-between gap-3 pt-2">
+                  <div className="flex items-center gap-2 text-xs text-gray-600">
+                    <i className="fa-solid fa-shield-halved text-emerald-600"></i>
+                    <span>
+                      Clicking <strong>Send via WhatsApp Desktop</strong> automatically saves the PDF to Downloads and
+                      opens the chat in WhatsApp Desktop.
+                    </span>
+                  </div>
+
+                  <div className="flex items-center gap-2.5 flex-wrap">
+                    {/* Print Voucher */}
+                    <button
+                      type="button"
+                      onClick={handlePrintPdf}
+                      className="px-3.5 py-2.5 rounded-xl border border-gray-300 bg-white hover:bg-gray-50 text-gray-700 font-semibold text-xs flex items-center gap-2 shadow-xs transition-colors"
+                      title="Open printable voucher in browser"
+                    >
+                      <i className="fa-solid fa-print text-sm text-gray-500"></i>
+                      <span>Print Voucher</span>
+                    </button>
+
+                    {/* Direct PDF Download */}
+                    <button
+                      type="button"
+                      onClick={handleDownloadOnlyPdf}
+                      className="px-4 py-2.5 rounded-xl border border-indigo-200 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-semibold text-xs flex items-center gap-2 shadow-xs transition-colors"
+                      title="Download PDF directly to computer"
+                    >
+                      <i className="fa-solid fa-file-pdf text-sm text-indigo-600"></i>
+                      <span>Download PDF Voucher</span>
+                    </button>
+
+                    {/* Primary: Send via WhatsApp Desktop */}
+                    <button
+                      type="button"
+                      onClick={handleSendFeeReceipt}
+                      className="px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs flex items-center gap-2.5 shadow-md hover:shadow-lg transition-all"
+                      title="Generate PDF and open WhatsApp Desktop"
+                    >
+                      <i className="fa-brands fa-whatsapp text-base"></i>
+                      <span>Send Fee Receipt via WhatsApp Desktop</span>
+                    </button>
+                  </div>
                 </div>
               </div>
             )}
