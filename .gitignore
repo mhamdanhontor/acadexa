@@ -52,6 +52,7 @@ backend/storage/uploads/*
 !backend/storage/backups/.gitkeep
 !backend/storage/reports/.gitkeep
 !backend/storage/uploads/.gitkeep
+storage/
 *.log
 logs/
 

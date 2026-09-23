@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { listClasses, createClass, updateClass, setClassStatus } from '../api/academicStructure'
+import { listClasses, createClass, updateClass, setClassStatus, deleteClass } from '../api/academicStructure'
 import { normalizeError } from '../api/client'
 import { useAuth } from '../context/AuthContext'
 import PageHeader from '../components/PageHeader'
@@ -8,6 +8,7 @@ import ErrorAlert from '../components/ErrorAlert'
 import EmptyState from '../components/EmptyState'
 import StatusBadge from '../components/StatusBadge'
 import Modal from '../components/Modal'
+import ConfirmDeleteModal from '../components/ConfirmDeleteModal'
 
 export default function ClassesPage() {
   const { hasRole } = useAuth()
@@ -21,6 +22,7 @@ export default function ClassesPage() {
   const [form, setForm] = useState({ name: '', description: '' })
   const [saving, setSaving] = useState(false)
   const [formError, setFormError] = useState('')
+  const [deleteModal, setDeleteModal] = useState({ open: false, id: null, name: '', loading: false })
 
   async function load() {
     setLoading(true)
@@ -81,6 +83,22 @@ export default function ClassesPage() {
     }
   }
 
+  function confirmDelete(cls) {
+    setDeleteModal({ open: true, id: cls.id, name: cls.name, loading: false })
+  }
+
+  async function handleDeleteConfirm() {
+    setDeleteModal((prev) => ({ ...prev, loading: true }))
+    try {
+      await deleteClass(deleteModal.id)
+      setDeleteModal({ open: false, id: null, name: '', loading: false })
+      load()
+    } catch (err) {
+      setError(normalizeError(err).message)
+      setDeleteModal((prev) => ({ ...prev, loading: false }))
+    }
+  }
+
   return (
     <div>
       <PageHeader
@@ -126,6 +144,9 @@ export default function ClassesPage() {
                       <button onClick={() => toggleStatus(cls)} className="text-gray-500 hover:text-gray-700">
                         {cls.is_active ? 'Deactivate' : 'Activate'}
                       </button>
+                      <button onClick={() => confirmDelete(cls)} className="text-red-500 hover:text-red-700">
+                        Delete
+                      </button>
                     </td>
                   )}
                 </tr>
@@ -167,6 +188,16 @@ export default function ClassesPage() {
           </div>
         </form>
       </Modal>
+
+      <ConfirmDeleteModal
+        open={deleteModal.open}
+        title="Delete Class"
+        itemName={deleteModal.name}
+        message="Are you sure you want to delete this class? This action cannot be undone."
+        loading={deleteModal.loading}
+        onConfirm={handleDeleteConfirm}
+        onClose={() => setDeleteModal({ open: false, id: null, name: '', loading: false })}
+      />
     </div>
   )
 }

@@ -67,8 +67,8 @@ def test_save_all_enrolled_attendance_creates_absent_and_leave_notifications(cli
     assert data["absent"] == 1
     assert data["leave"] == 1
     assert data["late"] == 1
-    assert data["notifications_queued"] == 2
-    assert len(data["dispatches"]) == 2
+    assert data["notifications_queued"] == 3
+    assert len(data["dispatches"]) == 3
 
     # Verify Absent notification
     absent_dispatch = next((d for d in data["dispatches"] if d["student_id"] == s2), None)
@@ -85,6 +85,13 @@ def test_save_all_enrolled_attendance_creates_absent_and_leave_notifications(cli
     assert "LEAVE" in leave_dispatch["message"]
     assert "Hamza Ali" in leave_dispatch["message"]
     assert "web.whatsapp.com" in leave_dispatch["whatsapp_web_url"]
+
+    # Verify Late notification
+    late_dispatch = next((d for d in data["dispatches"] if d["student_id"] == s4), None)
+    assert late_dispatch is not None
+    assert late_dispatch["status_type"] == "LATE"
+    assert "LATE" in late_dispatch["message"]
+    assert "web.whatsapp.com" in late_dispatch["whatsapp_web_url"]
 
 
 def test_all_enrolled_duplicate_student_fails(client, auth_headers, setup_multi_class_students):

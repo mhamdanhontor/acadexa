@@ -24,7 +24,7 @@ export default function LoginPage() {
       navigate(redirectTo, { replace: true })
     } catch (err) {
       const normalized = normalizeError(err)
-      setError(normalized.message || 'Invalid email or password.')
+      setError(normalized.message || 'Incorrect email/username or password.')
     } finally {
       setSubmitting(false)
     }
@@ -50,11 +50,11 @@ export default function LoginPage() {
 
           <div>
             <label htmlFor="email" className="block text-sm font-medium text-gray-700 mb-1.5">
-              Email
+              Email / Username
             </label>
             <input
               id="email"
-              type="email"
+              type="text"
               required
               autoComplete="username"
               value={email}

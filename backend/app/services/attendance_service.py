@@ -27,6 +27,55 @@ from app.services.settings_service import get_setting
 from app.utils.phone import build_whatsapp_urls
 
 
+def render_leave_message(student: Student, date_val: date, academy_name: str) -> str:
+    """Render bilingual English and Urdu approved leave acknowledgment message."""
+    from app.utils.urdu_transliteration import get_guardian_urdu_name, get_student_urdu_name
+
+    guardian_label = student.guardian_name or "Guardian"
+    student_name_ur = get_student_urdu_name(student)
+    guardian_label_ur = get_guardian_urdu_name(student)
+
+    return (
+        f"*LEAVE ACKNOWLEDGMENT*\n*Assalam-o-Alaikum*\n\n"
+        f"Dear Parent/Guardian (*{guardian_label}*),\n\n"
+        f"This is to inform you that your child *{student.name}* has been marked on approved *LEAVE* on *{date_val.isoformat()}*.\n\n"
+        f"We look forward to their return to regular classes.\n\n"
+        f"Best regards,\n"
+        f"*{academy_name}*\n\n"
+        f"-----------------------------------\n\n"
+        f"*رخصت کی تصدیق*\n*السلام علیکم*\n\n"
+        f"محترم والدین / سرپرست (*{guardian_label_ur}*)،\n\n"
+        f"آپ کو مطلع کیا جاتا ہے کہ آپ کے بچے *{student_name_ur}* کی مورخہ *{date_val.isoformat()}* کی *رخصت (Leave)* اکیڈمی ریکارڈ میں درج کر لی گئی ہے۔\n\n"
+        f"والسلام،\n"
+        f"*{academy_name}*"
+    )
+
+
+def render_late_message(student: Student, date_val: date, academy_name: str) -> str:
+    """Render bilingual English and Urdu late arrival notice message."""
+    from app.utils.urdu_transliteration import get_guardian_urdu_name, get_student_urdu_name
+
+    guardian_label = student.guardian_name or "Guardian"
+    student_name_ur = get_student_urdu_name(student)
+    guardian_label_ur = get_guardian_urdu_name(student)
+
+    return (
+        f"*LATE ARRIVAL NOTICE*\n*Assalam-o-Alaikum*\n\n"
+        f"Dear Parent/Guardian (*{guardian_label}*),\n\n"
+        f"This is to inform you that your child *{student.name}* arrived *LATE* at the academy on *{date_val.isoformat()}*.\n\n"
+        f"Punctuality is essential for academic discipline. Kindly ensure timely arrival in future classes.\n\n"
+        f"Best regards,\n"
+        f"*{academy_name}*\n\n"
+        f"-----------------------------------\n\n"
+        f"*تاخیر سے آمد کی اطلاع*\n*السلام علیکم*\n\n"
+        f"محترم والدین / سرپرست (*{guardian_label_ur}*)،\n\n"
+        f"آپ کو مطلع کیا جاتا ہے کہ آپ کا بچہ *{student_name_ur}* مورخہ *{date_val.isoformat()}* کو اکیڈمی میں *تاخیر (Late)* سے پہنچا ہے۔\n\n"
+        f"بہتر تعلیمی نظم و ضبط کے لیے وقت کی پابندی بے حد ضروری ہے۔ براہِ کرم آئندہ بروقت آمد کو یقینی بنائیں۔\n\n"
+        f"والسلام،\n"
+        f"*{academy_name}*"
+    )
+
+
 def save_bulk_attendance(db: Session, payload: BulkAttendanceRequest, user_id: int) -> BulkAttendanceResult:
     student_ids = [r.student_id for r in payload.records]
     if not student_ids:
@@ -75,20 +124,49 @@ def save_bulk_attendance(db: Session, payload: BulkAttendanceRequest, user_id: i
 
         counts[record.status] += 1
 
-        if record.status == AttendanceStatus.ABSENT:
-            job = create_notification_job(
-                db,
-                student,
-                NotificationType.ABSENCE,
-                variables={
-                    "student_name": student.name,
-                    "guardian_name": student.guardian_name or "Guardian",
-                    "date": payload.date.isoformat(),
-                    "academy_name": academy_name,
-                },
-                context_ref_type="attendance",
-                context_ref_id=None,  # set after flush below if needed
-            )
+        if record.status in (AttendanceStatus.ABSENT, AttendanceStatus.LEAVE, AttendanceStatus.LATE):
+            from app.utils.urdu_transliteration import get_guardian_urdu_name, get_student_urdu_name
+
+            guardian_label = student.guardian_name or "Guardian"
+            if record.status == AttendanceStatus.ABSENT:
+                job = create_notification_job(
+                    db,
+                    student,
+                    NotificationType.ABSENCE,
+                    variables={
+                        "student_name": student.name,
+                        "student_name_ur": get_student_urdu_name(student),
+                        "guardian_name": guardian_label,
+                        "guardian_name_ur": get_guardian_urdu_name(student),
+                        "date": payload.date.isoformat(),
+                        "academy_name": academy_name,
+                    },
+                    context_ref_type="attendance_absence",
+                    context_ref_id=None,  # set after flush below if needed
+                )
+            elif record.status == AttendanceStatus.LEAVE:
+                msg = render_leave_message(student, payload.date, academy_name)
+                job = create_notification_job(
+                    db,
+                    student,
+                    NotificationType.ABSENCE,
+                    variables={},
+                    context_ref_type="attendance_leave",
+                    context_ref_id=None,
+                    custom_message=msg,
+                )
+            else:  # LATE
+                msg = render_late_message(student, payload.date, academy_name)
+                job = create_notification_job(
+                    db,
+                    student,
+                    NotificationType.ABSENCE,
+                    variables={},
+                    context_ref_type="attendance_late",
+                    context_ref_id=None,
+                    custom_message=msg,
+                )
+
             notifications_queued += 1
             urls = build_whatsapp_urls(student.whatsapp_number, job.message)
             absent_notifications.append(
@@ -97,8 +175,9 @@ def save_bulk_attendance(db: Session, payload: BulkAttendanceRequest, user_id: i
                     student_id=student.id,
                     student_name=student.name,
                     student_code=student.student_code,
-                    guardian_name=student.guardian_name or "Guardian",
+                    guardian_name=guardian_label,
                     whatsapp_number=student.whatsapp_number,
+                    status_type=record.status.value,
                     message=job.message,
                     whatsapp_web_url=urls["web_url"],
                     whatsapp_app_url=urls["app_url"],
@@ -132,7 +211,7 @@ def save_bulk_attendance(db: Session, payload: BulkAttendanceRequest, user_id: i
 
 
 def get_absent_notifications(db: Session, date_: date, class_id: int, batch_id: int) -> list[AbsentNotificationOut]:
-    """Retrieve absent students for a specific session with rendered WhatsApp messages and URLs."""
+    """Retrieve absent, leave, and late students for a specific session with rendered WhatsApp messages and URLs."""
     from app.models.notification import NotificationJob
 
     records = (
@@ -141,7 +220,7 @@ def get_absent_notifications(db: Session, date_: date, class_id: int, batch_id: 
             Attendance.date == date_,
             Attendance.class_id == class_id,
             Attendance.batch_id == batch_id,
-            Attendance.status == AttendanceStatus.ABSENT,
+            Attendance.status.in_([AttendanceStatus.ABSENT, AttendanceStatus.LEAVE, AttendanceStatus.LATE]),
         )
         .all()
     )
@@ -153,7 +232,7 @@ def get_absent_notifications(db: Session, date_: date, class_id: int, batch_id: 
     academy_name = get_setting(db, "academy_name") or "Honor Knowledge Academy"
     default_body = get_template_body(db, NotificationType.ABSENCE)
 
-    # Fetch recent absence jobs for these students
+    # Fetch recent absence/leave/late jobs for these students
     recent_jobs = (
         db.query(NotificationJob)
         .filter(
@@ -173,21 +252,31 @@ def get_absent_notifications(db: Session, date_: date, class_id: int, batch_id: 
         student = students.get(rec.student_id)
         if not student:
             continue
+        guardian_label = student.guardian_name or "Guardian"
         job = job_map.get(student.id)
         if job:
             msg = job.message
             notif_id = job.id
             status_val = job.status.value
         else:
-            msg = render_template(
-                default_body,
-                {
-                    "student_name": student.name,
-                    "guardian_name": student.guardian_name or "Guardian",
-                    "date": date_.isoformat(),
-                    "academy_name": academy_name,
-                },
-            )
+            if rec.status == AttendanceStatus.LEAVE:
+                msg = render_leave_message(student, date_, academy_name)
+            elif rec.status == AttendanceStatus.LATE:
+                msg = render_late_message(student, date_, academy_name)
+            else:
+                from app.utils.urdu_transliteration import get_guardian_urdu_name, get_student_urdu_name
+
+                msg = render_template(
+                    default_body,
+                    {
+                        "student_name": student.name,
+                        "student_name_ur": get_student_urdu_name(student),
+                        "guardian_name": guardian_label,
+                        "guardian_name_ur": get_guardian_urdu_name(student),
+                        "date": date_.isoformat(),
+                        "academy_name": academy_name,
+                    },
+                )
             notif_id = None
             status_val = "PENDING"
 
@@ -198,8 +287,9 @@ def get_absent_notifications(db: Session, date_: date, class_id: int, batch_id: 
                 student_id=student.id,
                 student_name=student.name,
                 student_code=student.student_code,
-                guardian_name=student.guardian_name or "Guardian",
+                guardian_name=guardian_label,
                 whatsapp_number=student.whatsapp_number,
+                status_type=rec.status.value,
                 message=msg,
                 whatsapp_web_url=urls["web_url"],
                 whatsapp_app_url=urls["app_url"],
@@ -335,29 +425,33 @@ def save_global_attendance(
 
         counts[record.status] += 1
 
-        # Trigger WhatsApp notification for both ABSENT and LEAVE
-        if record.status in (AttendanceStatus.ABSENT, AttendanceStatus.LEAVE):
+        # Trigger WhatsApp notification for ABSENT, LEAVE, and LATE
+        if record.status in (AttendanceStatus.ABSENT, AttendanceStatus.LEAVE, AttendanceStatus.LATE):
+            from app.utils.urdu_transliteration import get_guardian_urdu_name, get_student_urdu_name
+
             guardian_label = student.guardian_name or "Guardian"
+            student_name_ur = get_student_urdu_name(student)
+            guardian_label_ur = get_guardian_urdu_name(student)
+
             if record.status == AttendanceStatus.ABSENT:
                 msg = render_template(
                     default_absence_body,
                     {
                         "student_name": student.name,
+                        "student_name_ur": student_name_ur,
                         "guardian_name": guardian_label,
+                        "guardian_name_ur": guardian_label_ur,
                         "date": payload.date.isoformat(),
                         "academy_name": academy_name,
                     },
                 )
                 context_ref = "attendance_absence"
-            else:  # LEAVE
-                msg = (
-                    f"*Assalam-o-Alaikum*\n\n"
-                    f"Dear Parent/Guardian (*{guardian_label}*),\n\n"
-                    f"This is to inform you that your child *{student.name}* was marked on *LEAVE* on *{payload.date.isoformat()}*.\n\n"
-                    f"Regards,\n"
-                    f"*{academy_name}*"
-                )
+            elif record.status == AttendanceStatus.LEAVE:
+                msg = render_leave_message(student, payload.date, academy_name)
                 context_ref = "attendance_leave"
+            else:  # LATE
+                msg = render_late_message(student, payload.date, academy_name)
+                context_ref = "attendance_late"
 
             job = create_notification_job(
                 db,

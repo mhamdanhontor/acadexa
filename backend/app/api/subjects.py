@@ -60,3 +60,28 @@ def update_subject_status(
     db.commit()
     db.refresh(obj)
     return obj
+
+
+@router.delete("/{subject_id}", status_code=204)
+def delete_subject(
+    subject_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_roles(RoleName.SUPER_ADMIN, RoleName.ADMIN)),
+):
+    obj = db.get(Subject, subject_id)
+    if obj is None:
+        raise NotFoundError("Subject not found.")
+
+    from app.models.academics import Marks, Test
+    tests = db.query(Test).filter(Test.subject_id == subject_id).all()
+    test_ids = [t.id for t in tests]
+    if test_ids:
+        db.query(Marks).filter(Marks.test_id.in_(test_ids)).delete(synchronize_session=False)
+        db.query(Test).filter(Test.subject_id == subject_id).delete(synchronize_session=False)
+
+    subj_name = obj.name
+    db.delete(obj)
+    record_audit(db, current_user.id, "SUBJECT_DELETED", "subject", subject_id, f"Deleted subject {subj_name}")
+    db.commit()
+    return None
+

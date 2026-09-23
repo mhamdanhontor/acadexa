@@ -17,7 +17,9 @@ class Student(Base, TimestampMixin):
     id: Mapped[int] = mapped_column(primary_key=True)
     student_code: Mapped[str] = mapped_column(String(50), unique=True, nullable=False, index=True)
     name: Mapped[str] = mapped_column(String(150), nullable=False, index=True)
+    name_ur: Mapped[Optional[str]] = mapped_column(String(150), nullable=True)
     guardian_name: Mapped[Optional[str]] = mapped_column(String(150), nullable=True)
+    guardian_name_ur: Mapped[Optional[str]] = mapped_column(String(150), nullable=True)
     whatsapp_number: Mapped[str] = mapped_column(String(30), nullable=False, index=True)
 
     class_id: Mapped[int] = mapped_column(ForeignKey("classes.id"), nullable=False)

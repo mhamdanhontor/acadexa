@@ -10,7 +10,9 @@ from app.schemas.academic_structure import BatchOut, ClassOut
 class StudentBase(BaseModel):
     student_code: Optional[str] = Field(default=None, max_length=50)
     name: str = Field(min_length=1, max_length=150)
+    name_ur: Optional[str] = Field(default=None, max_length=150)
     guardian_name: Optional[str] = Field(default=None, max_length=150)
+    guardian_name_ur: Optional[str] = Field(default=None, max_length=150)
     whatsapp_number: str = Field(min_length=6, max_length=30)
     class_id: int
     batch_id: int
@@ -42,7 +44,9 @@ class StudentCreate(StudentBase):
 
 class StudentUpdate(BaseModel):
     name: Optional[str] = Field(default=None, min_length=1, max_length=150)
+    name_ur: Optional[str] = Field(default=None, max_length=150)
     guardian_name: Optional[str] = None
+    guardian_name_ur: Optional[str] = None
     whatsapp_number: Optional[str] = None
     class_id: Optional[int] = None
     batch_id: Optional[int] = None
@@ -74,7 +78,9 @@ class StudentOut(BaseModel):
     id: int
     student_code: str
     name: str
-    guardian_name: Optional[str]
+    name_ur: Optional[str] = None
+    guardian_name: Optional[str] = None
+    guardian_name_ur: Optional[str] = None
     whatsapp_number: str
     class_id: int
     batch_id: int

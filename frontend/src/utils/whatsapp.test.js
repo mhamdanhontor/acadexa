@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { cleanPhoneNumber, buildWhatsAppUrls } from './whatsapp'
+import { cleanPhoneNumber, buildWhatsAppUrls, openWhatsApp } from './whatsapp'
 
 describe('WhatsApp utilities', () => {
   it('cleans standard local numbers starting with 0', () => {
@@ -21,5 +21,19 @@ describe('WhatsApp utilities', () => {
     expect(urls.webUrl).toContain('Dear%20Parent%2C%20Hamdan%20was%20ABSENT')
     expect(urls.appUrl).toContain('whatsapp://send?phone=923221742520&text=')
     expect(urls.universalUrl).toContain('https://wa.me/923221742520?text=')
+  })
+
+  it('calls window.acadexaDesktop.openExternal when in Electron environment', () => {
+    const originalDesktop = window.acadexaDesktop
+    let calledUrl = null
+    window.acadexaDesktop = {
+      openExternal: (url) => {
+        calledUrl = url
+      },
+    }
+    const urls = openWhatsApp('03221742520', 'Test message', 'desktop')
+    expect(calledUrl).toBe(urls.appUrl)
+    expect(calledUrl).toContain('whatsapp://send?phone=923221742520')
+    window.acadexaDesktop = originalDesktop
   })
 })

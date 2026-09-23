@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { listStudents, createStudent, updateStudent, setStudentStatus } from '../api/students'
+import { listStudents, createStudent, updateStudent, setStudentStatus, deleteStudent } from '../api/students'
 import { listClasses, listBatches } from '../api/academicStructure'
 import { normalizeError } from '../api/client'
 import { useAuth } from '../context/AuthContext'
@@ -11,11 +11,15 @@ import EmptyState from '../components/EmptyState'
 import StatusBadge from '../components/StatusBadge'
 import Modal from '../components/Modal'
 import Pagination from '../components/Pagination'
+import StudentDetailModal from '../components/StudentDetailModal'
+import ConfirmDeleteModal from '../components/ConfirmDeleteModal'
 
 const EMPTY_FORM = {
   student_code: '',
   name: '',
+  name_ur: '',
   guardian_name: '',
+  guardian_name_ur: '',
   whatsapp_number: '',
   class_id: '',
   batch_id: '',
@@ -45,10 +49,28 @@ export default function StudentsPage() {
   const pageSize = 20
 
   const [modalOpen, setModalOpen] = useState(false)
+  const [detailStudent, setDetailStudent] = useState(null)
   const [editing, setEditing] = useState(null)
   const [form, setForm] = useState(EMPTY_FORM)
   const [saving, setSaving] = useState(false)
   const [formError, setFormError] = useState('')
+  const [deleteModal, setDeleteModal] = useState({ open: false, id: null, name: '', loading: false })
+
+  function confirmDelete(student) {
+    setDeleteModal({ open: true, id: student.id, name: student.name, loading: false })
+  }
+
+  async function handleDeleteConfirm() {
+    setDeleteModal((prev) => ({ ...prev, loading: true }))
+    try {
+      await deleteStudent(deleteModal.id)
+      setDeleteModal({ open: false, id: null, name: '', loading: false })
+      load()
+    } catch (err) {
+      setError(normalizeError(err).message)
+      setDeleteModal((prev) => ({ ...prev, loading: false }))
+    }
+  }
 
   async function loadLookups() {
     try {
@@ -105,7 +127,9 @@ export default function StudentsPage() {
     setForm({
       student_code: student.student_code,
       name: student.name,
+      name_ur: student.name_ur || '',
       guardian_name: student.guardian_name || '',
+      guardian_name_ur: student.guardian_name_ur || '',
       whatsapp_number: student.whatsapp_number,
       class_id: student.class_id,
       batch_id: student.batch_id,
@@ -123,6 +147,10 @@ export default function StudentsPage() {
     try {
       const payload = {
         ...form,
+        name: form.name.trim(),
+        name_ur: form.name_ur?.trim() || null,
+        guardian_name: form.guardian_name?.trim() || null,
+        guardian_name_ur: form.guardian_name_ur?.trim() || null,
         class_id: Number(form.class_id),
         batch_id: Number(form.batch_id),
         admission_date: form.admission_date || null,
@@ -209,32 +237,72 @@ export default function StudentsPage() {
                 <th className="px-5 py-3 font-medium">Class / Batch</th>
                 <th className="px-5 py-3 font-medium">WhatsApp</th>
                 <th className="px-5 py-3 font-medium">Status</th>
-                {canManage && <th className="px-5 py-3 font-medium text-right">Actions</th>}
+                <th className="px-5 py-3 font-medium text-right">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
               {(students || []).map((s) => (
-                <tr key={s.id}>
-                  <td className="px-5 py-3 text-gray-600">{s.student_code}</td>
+                <tr key={s.id} className="hover:bg-slate-50/70 transition-colors">
+                  <td className="px-5 py-3">
+                    <button
+                      onClick={() => setDetailStudent(s)}
+                      className="font-mono text-xs font-semibold text-indigo-600 hover:text-indigo-900 hover:underline flex items-center gap-1"
+                      title="Click to view 360° Attendance & Fee Record"
+                    >
+                      <i className="fas fa-id-badge text-gray-400"></i>
+                      {s.student_code}
+                    </button>
+                  </td>
                   <td className="px-5 py-3 font-medium text-gray-800">
-                    {s.name}
-                    {s.guardian_name && <div className="text-xs text-gray-400">Guardian: {s.guardian_name}</div>}
+                    <button
+                      onClick={() => setDetailStudent(s)}
+                      className="text-left font-semibold text-gray-900 hover:text-indigo-600 hover:underline flex items-center gap-2 flex-wrap"
+                      title="Click to view 360° Attendance & Fee Record"
+                    >
+                      <span>{s.name}</span>
+                      {s.name_ur && (
+                        <span className="text-xs font-normal text-indigo-700 bg-indigo-50 px-1.5 py-0.5 rounded border border-indigo-100 font-serif">
+                          {s.name_ur}
+                        </span>
+                      )}
+                    </button>
+                    {(s.guardian_name || s.guardian_name_ur) && (
+                      <div className="text-xs text-gray-400 mt-0.5">
+                        Guardian: <span className="text-gray-600">{s.guardian_name || '—'}</span>
+                        {s.guardian_name_ur && (
+                          <span className="ml-1 text-gray-500 font-serif">({s.guardian_name_ur})</span>
+                        )}
+                      </div>
+                    )}
                   </td>
                   <td className="px-5 py-3 text-gray-600">
                     {s.class_room?.name || '—'} / {s.batch?.name || '—'}
                   </td>
                   <td className="px-5 py-3 text-gray-600">{s.whatsapp_number}</td>
                   <td className="px-5 py-3"><StatusBadge status={s.is_active} /></td>
-                  {canManage && (
-                    <td className="px-5 py-3 text-right space-x-3">
-                      <button onClick={() => openEdit(s)} className="text-indigo-600 hover:text-indigo-800">
-                        Edit
-                      </button>
-                      <button onClick={() => toggleStatus(s)} className="text-gray-500 hover:text-gray-700">
-                        {s.is_active ? 'Deactivate' : 'Activate'}
-                      </button>
-                    </td>
-                  )}
+                  <td className="px-5 py-3 text-right space-x-2 whitespace-nowrap">
+                    <button
+                      onClick={() => setDetailStudent(s)}
+                      className="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-semibold rounded-md bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200 transition-colors"
+                      title="View full attendance & fee record"
+                    >
+                      <i className="fas fa-folder-open text-xs"></i>
+                      <span>Record</span>
+                    </button>
+                    {canManage && (
+                      <>
+                        <button onClick={() => openEdit(s)} className="text-indigo-600 hover:text-indigo-800 text-xs font-medium">
+                          Edit
+                        </button>
+                        <button onClick={() => toggleStatus(s)} className="text-gray-500 hover:text-gray-700 text-xs">
+                          {s.is_active ? 'Deactivate' : 'Activate'}
+                        </button>
+                        <button onClick={() => confirmDelete(s)} className="text-red-500 hover:text-red-700 text-xs font-medium">
+                          Delete
+                        </button>
+                      </>
+                    )}
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -258,7 +326,7 @@ export default function StudentsPage() {
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Full Name</label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Full Name (English)</label>
               <input
                 required
                 value={form.name}
@@ -267,11 +335,35 @@ export default function StudentsPage() {
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Guardian Name</label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Name in Urdu <span className="text-xs font-normal text-gray-400">(Optional - auto-generated if blank)</span>
+              </label>
+              <input
+                dir="rtl"
+                placeholder="مثال: محمد احمد"
+                value={form.name_ur}
+                onChange={(e) => setForm({ ...form, name_ur: e.target.value })}
+                className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-right"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Guardian Name (English)</label>
               <input
                 value={form.guardian_name}
                 onChange={(e) => setForm({ ...form, guardian_name: e.target.value })}
                 className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Guardian Name in Urdu <span className="text-xs font-normal text-gray-400">(Optional)</span>
+              </label>
+              <input
+                dir="rtl"
+                placeholder="مثال: بشیر احمد"
+                value={form.guardian_name_ur}
+                onChange={(e) => setForm({ ...form, guardian_name_ur: e.target.value })}
+                className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-right"
               />
             </div>
             <div>
@@ -341,6 +433,24 @@ export default function StudentsPage() {
           </div>
         </form>
       </Modal>
+
+      {detailStudent && (
+        <StudentDetailModal
+          open={Boolean(detailStudent)}
+          onClose={() => setDetailStudent(null)}
+          student={detailStudent}
+        />
+      )}
+
+      <ConfirmDeleteModal
+        open={deleteModal.open}
+        title="Delete Student"
+        itemName={deleteModal.name}
+        message="Are you sure you want to deactivate / remove this student from active records?"
+        loading={deleteModal.loading}
+        onConfirm={handleDeleteConfirm}
+        onClose={() => setDeleteModal({ open: false, id: null, name: '', loading: false })}
+      />
     </div>
   )
 }

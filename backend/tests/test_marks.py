@@ -50,6 +50,13 @@ def test_bulk_marks_valid_range(client, auth_headers, setup_test):
     data = resp.json()
     assert data["students_updated"] == 1
     assert data["notifications_queued"] == 1
+    assert "dispatches" in data
+    assert len(data["dispatches"]) == 1
+    d = data["dispatches"][0]
+    assert d["student_id"] == student_id
+    assert d["obtained_marks"] == 85
+    assert "web.whatsapp.com" in d["whatsapp_web_url"]
+    assert "whatsapp://" in d["whatsapp_app_url"]
 
 
 def test_marks_percentage_calculated_server_side(client, auth_headers, setup_test):
@@ -134,3 +141,78 @@ def test_marks_upsert_on_resave(client, auth_headers, setup_test):
     marks = list_resp.json()["items"]
     assert len(marks) == 1
     assert marks[0]["obtained_marks"] == 95.0
+
+
+def test_quick_marks_success(client, auth_headers, setup_test):
+    _, student_id = setup_test
+    resp = client.post(
+        "/api/v1/marks/quick",
+        json={
+            "test_name": "Weekly Math Quiz",
+            "subject": "Mathematics",
+            "records": [{"student_id": student_id, "obtained_marks": 45, "total_marks": 50}],
+        },
+        headers=auth_headers,
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["students_processed"] == 1
+    assert data["notifications_queued"] == 1
+    assert len(data["dispatches"]) == 1
+    dispatch = data["dispatches"][0]
+    assert dispatch["student_id"] == student_id
+    assert dispatch["obtained_marks"] == 45.0
+    assert dispatch["total_marks"] == 50.0
+    assert dispatch["percentage"] == 90.0
+    assert dispatch["grade"] == "A+"
+    assert "https://web.whatsapp.com/send" in dispatch["whatsapp_web_url"]
+    assert "whatsapp://send" in dispatch["whatsapp_app_url"]
+    assert "Marks Student" in dispatch["message"]
+
+
+def test_quick_marks_invalid_range_rejected(client, auth_headers, setup_test):
+    _, student_id = setup_test
+    resp = client.post(
+        "/api/v1/marks/quick",
+        json={
+            "test_name": "Weekly Math Quiz",
+            "subject": "Mathematics",
+            "records": [{"student_id": student_id, "obtained_marks": 55, "total_marks": 50}],
+        },
+        headers=auth_headers,
+    )
+    assert resp.status_code == 422
+
+
+def test_quick_marks_duplicate_student_rejected(client, auth_headers, setup_test):
+    _, student_id = setup_test
+    resp = client.post(
+        "/api/v1/marks/quick",
+        json={
+            "test_name": "Weekly Math Quiz",
+            "subject": "Mathematics",
+            "records": [
+                {"student_id": student_id, "obtained_marks": 40, "total_marks": 50},
+                {"student_id": student_id, "obtained_marks": 42, "total_marks": 50},
+            ],
+        },
+        headers=auth_headers,
+    )
+    assert resp.status_code == 422
+
+
+def test_get_marks_notifications(client, auth_headers, setup_test):
+    test_id, student_id = setup_test
+    client.post(
+        "/api/v1/marks/bulk",
+        json={"test_id": test_id, "records": [{"student_id": student_id, "obtained_marks": 92}]},
+        headers=auth_headers,
+    )
+    resp = client.get(f"/api/v1/marks/notifications?test_id={test_id}", headers=auth_headers)
+    assert resp.status_code == 200
+    items = resp.json()
+    assert len(items) == 1
+    assert items[0]["student_id"] == student_id
+    assert items[0]["obtained_marks"] == 92.0
+    assert "web.whatsapp.com" in items[0]["whatsapp_web_url"]
+

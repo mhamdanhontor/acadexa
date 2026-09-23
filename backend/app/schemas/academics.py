@@ -73,6 +73,7 @@ class MarksOut(BaseModel):
     percentage: float
     grade: Optional[str]
     created_at: datetime
+    test: Optional[TestOut] = None
 
     class Config:
         from_attributes = True

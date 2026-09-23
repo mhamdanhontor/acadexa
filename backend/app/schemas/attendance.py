@@ -39,6 +39,7 @@ class AbsentNotificationOut(BaseModel):
     student_code: str
     guardian_name: str
     whatsapp_number: str
+    status_type: str = "ABSENT"
     message: str
     whatsapp_web_url: str
     whatsapp_app_url: str

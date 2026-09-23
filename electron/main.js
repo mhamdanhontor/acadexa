@@ -124,6 +124,14 @@ function createWindow() {
     return { action: 'deny' }
   })
 
+  // Intercept in-app navigation for whatsapp:// or external urls
+  mainWindow.webContents.on('will-navigate', (event, url) => {
+    if (url.startsWith('whatsapp:') || url.startsWith('https://web.whatsapp.com') || url.startsWith('https://wa.me')) {
+      event.preventDefault()
+      shell.openExternal(url)
+    }
+  })
+
   const config = readConfig()
   if (config?.apiBaseUrl) {
     loadApp()
@@ -133,6 +141,17 @@ function createWindow() {
 }
 
 // --- IPC handlers used by config-ui/renderer.js and preload.js ---
+
+ipcMain.handle('acadexa:open-external', async (_event, url) => {
+  if (!url) return { ok: false, error: 'Empty URL' }
+  try {
+    await shell.openExternal(url)
+    return { ok: true }
+  } catch (err) {
+    console.error('Failed to open external url:', url, err)
+    return { ok: false, error: err?.message || String(err) }
+  }
+})
 
 // Synchronous variant so preload.js can inject window.__ACADEXA_API_BASE_URL__
 // before the renderer's own module scripts execute.

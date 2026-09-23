@@ -3,22 +3,16 @@ import Modal from './Modal'
 import { openWhatsApp, cleanPhoneNumber, getStoredWhatsAppTarget, setStoredWhatsAppTarget } from '../utils/whatsapp'
 import { markNotificationSent } from '../api/notifications'
 
-export default function AttendanceDispatchModal({
+export default function MarksDispatchModal({
   open,
   onClose,
   dispatches = [],
-  absentees = [],
-  sessionDate = '',
-  className = '',
-  batchName = '',
+  testName = 'Test / Exam',
+  subject = '',
   autoSendFirst = false,
 }) {
-  const [target, setTargetState] = useState(getStoredWhatsAppTarget() || 'desktop')
-
-  function setTarget(val) {
-    setTargetState(val)
-    setStoredWhatsAppTarget(val)
-  }
+  // Target options: 'web' | 'desktop' | 'universal' (defaults to 'desktop')
+  const [target, setTarget] = useState(getStoredWhatsAppTarget() || 'desktop')
   const [sentMap, setSentMap] = useState({})
   const [copiedId, setCopiedId] = useState(null)
   const [copiedAll, setCopiedAll] = useState(false)
@@ -27,13 +21,11 @@ export default function AttendanceDispatchModal({
   const [autoRunning, setAutoRunning] = useState(false)
   const [countdown, setCountdown] = useState(10)
   const [pendingTargetItem, setPendingTargetItem] = useState(null)
+  const timerRef = useRef(null)
   const autoSentRef = useRef(false)
 
-  // Support both 'dispatches' and legacy 'absentees'
-  const rawList = dispatches?.length > 0 ? dispatches : absentees || []
-
   // Items mapped with current status
-  const items = rawList.map((item) => ({
+  const items = dispatches.map((item) => ({
     ...item,
     currentStatus: sentMap[item.student_id] || (item.status === 'SENT' ? 'SENT' : 'PENDING'),
   }))
@@ -42,9 +34,13 @@ export default function AttendanceDispatchModal({
   const totalCount = items.length
   const pendingItems = items.filter((i) => i.currentStatus !== 'SENT')
 
+  function handleTargetChange(newTarget) {
+    setTarget(newTarget)
+    setStoredWhatsAppTarget(newTarget)
+  }
+
   async function handleSendSingle(item) {
-    if (!item) return
-    // 1. Open WhatsApp
+    // 1. Open WhatsApp using selected target ('web', 'desktop', or 'universal')
     openWhatsApp(item.whatsapp_number, item.message, target)
 
     // 2. Mark locally as SENT
@@ -60,14 +56,14 @@ export default function AttendanceDispatchModal({
     }
   }
 
-  // When opened via Save action with autoSendFirst, auto-trigger first student immediately
+  // When opened via Save action with autoSendFirst, auto-trigger the first student immediately via desktop
   useEffect(() => {
-    if (open && autoSendFirst && !autoSentRef.current && rawList.length > 0) {
+    if (open && autoSendFirst && !autoSentRef.current && dispatches.length > 0) {
       autoSentRef.current = true
-      const first = rawList[0]
+      const first = dispatches[0]
       handleSendSingle(first)
 
-      const remaining = rawList.slice(1)
+      const remaining = dispatches.slice(1)
       if (remaining.length > 0) {
         setPendingTargetItem(remaining[0])
         setCountdown(10)
@@ -77,17 +73,17 @@ export default function AttendanceDispatchModal({
     if (!open) {
       autoSentRef.current = false
     }
-  }, [open, autoSendFirst, rawList])
+  }, [open, autoSendFirst, dispatches])
+
 
   // Auto-dispatch with 10s delay countdown
   function startAutoDispatch() {
     if (pendingItems.length === 0) return
     setAutoRunning(true)
-    // Send the first item immediately, then queue the rest with 10s delay
+    // Send first item immediately, then queue the rest with 10s delay
     const first = pendingItems[0]
     handleSendSingle(first)
 
-    // Check if more remain
     const remaining = pendingItems.slice(1)
     if (remaining.length > 0) {
       setPendingTargetItem(remaining[0])
@@ -95,7 +91,6 @@ export default function AttendanceDispatchModal({
     } else {
       setAutoRunning(false)
       setPendingTargetItem(null)
-      setCountdown(10)
     }
   }
 
@@ -103,15 +98,16 @@ export default function AttendanceDispatchModal({
     setAutoRunning(false)
     setPendingTargetItem(null)
     setCountdown(10)
+    if (timerRef.current) clearInterval(timerRef.current)
   }
 
   function skipCountdownAndSendNow() {
     if (!pendingTargetItem) return
+    if (timerRef.current) clearInterval(timerRef.current)
 
     const targetToSend = pendingTargetItem
     handleSendSingle(targetToSend)
 
-    // Find next after targetToSend
     const nextRemaining = items.filter(
       (i) => i.currentStatus !== 'SENT' && i.student_id !== targetToSend.student_id
     )
@@ -173,9 +169,12 @@ export default function AttendanceDispatchModal({
     const text = items
       .map(
         (i, idx) =>
-          `${idx + 1}. [${i.status_type || 'ABSENT'}] ${i.student_name} (${i.student_code || '—'})\nGuardian: ${i.guardian_name} (${i.whatsapp_number})\nMessage: ${i.message}`
+          `${idx + 1}. ${i.student_name} (${i.student_code || 'N/A'})\n` +
+          `Score: ${i.obtained_marks}/${i.total_marks} (${i.percentage}% - Grade: ${i.grade || '—'})\n` +
+          `Guardian: ${i.guardian_name} (${i.whatsapp_number})\n` +
+          `Message:\n${i.message}`
       )
-      .join('\n\n')
+      .join('\n\n' + '='.repeat(40) + '\n\n')
     navigator.clipboard.writeText(text)
     setCopiedAll(true)
     setTimeout(() => setCopiedAll(false), 2500)
@@ -190,7 +189,7 @@ export default function AttendanceDispatchModal({
         pauseAutoDispatch()
         onClose()
       }}
-      title="WhatsApp Attendance Dispatch (Absent & Leave)"
+      title={`WhatsApp Marks Dispatch — ${subject ? `${subject} (${testName})` : testName}`}
       width="max-w-3xl"
     >
       <div className="space-y-4">
@@ -201,15 +200,15 @@ export default function AttendanceDispatchModal({
           </div>
           <div className="flex-1 text-sm text-emerald-950">
             <h4 className="font-semibold text-emerald-900 mb-0.5">
-              WhatsApp Attendance Alert Dispatch
+              WhatsApp Marks Alert Dispatch
             </h4>
             <p className="text-xs text-emerald-800 leading-relaxed">
-              Clicking <strong>Send via WhatsApp</strong> opens WhatsApp with the parent's message <strong>pre-filled in the chat box</strong>. Press <strong>Enter</strong> in WhatsApp to send, then return here to send the next.
+              Clicking <strong>Send via WhatsApp</strong> opens WhatsApp with the student's result <strong>pre-filled in the chat box</strong>. Press <strong>Enter</strong> in WhatsApp to send, then return here to send the next.
             </p>
           </div>
         </div>
 
-        {/* Dispatch Controls & Stats */}
+        {/* Dispatch Controls & Stats (matching screenshot exactly) */}
         <div className="flex flex-wrap items-center justify-between gap-3 bg-gray-50 border border-gray-200 rounded-lg p-3 text-sm">
           <div className="flex items-center gap-2">
             <span className="text-xs font-semibold uppercase tracking-wider text-gray-500">
@@ -218,7 +217,7 @@ export default function AttendanceDispatchModal({
             <div className="inline-flex rounded-md shadow-xs bg-white border border-gray-300 p-0.5 text-xs">
               <button
                 type="button"
-                onClick={() => setTarget('web')}
+                onClick={() => handleTargetChange('web')}
                 className={`px-3 py-1 rounded font-medium transition-colors ${
                   target === 'web'
                     ? 'bg-indigo-600 text-white shadow-xs'
@@ -229,7 +228,7 @@ export default function AttendanceDispatchModal({
               </button>
               <button
                 type="button"
-                onClick={() => setTarget('desktop')}
+                onClick={() => handleTargetChange('desktop')}
                 className={`px-3 py-1 rounded font-medium transition-colors ${
                   target === 'desktop'
                     ? 'bg-indigo-600 text-white shadow-xs'
@@ -240,7 +239,7 @@ export default function AttendanceDispatchModal({
               </button>
               <button
                 type="button"
-                onClick={() => setTarget('universal')}
+                onClick={() => handleTargetChange('universal')}
                 className={`px-3 py-1 rounded font-medium transition-colors ${
                   target === 'universal'
                     ? 'bg-indigo-600 text-white shadow-xs'
@@ -303,21 +302,21 @@ export default function AttendanceDispatchModal({
                 <span className="text-xs font-medium text-amber-900">
                   Pacing Delay (10s): Next message will open for{' '}
                   <strong className="text-amber-950">{pendingTargetItem.student_name}</strong>{' '}
-                  ({pendingTargetItem.status_type || 'ABSENT'}) in {countdown} second{countdown !== 1 ? 's' : ''}...
+                  in {countdown} second{countdown !== 1 ? 's' : ''}...
                 </span>
               </div>
               <div className="flex items-center gap-2">
                 <button
                   type="button"
                   onClick={skipCountdownAndSendNow}
-                  className="bg-amber-600 hover:bg-amber-700 text-white text-xs font-semibold px-2.5 py-1 rounded shadow-xs transition-colors cursor-pointer"
+                  className="bg-amber-600 hover:bg-amber-700 text-white text-xs font-semibold px-2.5 py-1 rounded shadow-xs transition-colors"
                 >
                   <i className="fas fa-bolt mr-1"></i>Send Now
                 </button>
                 <button
                   type="button"
                   onClick={pauseAutoDispatch}
-                  className="bg-gray-200 hover:bg-gray-300 text-gray-800 text-xs font-medium px-2.5 py-1 rounded transition-colors cursor-pointer"
+                  className="bg-gray-200 hover:bg-gray-300 text-gray-800 text-xs font-medium px-2.5 py-1 rounded transition-colors"
                 >
                   <i className="fas fa-pause mr-1"></i>Pause
                 </button>
@@ -338,15 +337,13 @@ export default function AttendanceDispatchModal({
           {items.length === 0 ? (
             <div className="p-8 text-center text-gray-500 text-sm">
               <i className="fas fa-check-circle text-green-500 text-3xl mb-2"></i>
-              <p>No absent or on-leave students to notify for this session.</p>
+              <p>No student marks to dispatch for this test.</p>
             </div>
           ) : (
             items.map((item, idx) => {
               const isSent = item.currentStatus === 'SENT'
-              const statusType = item.status_type || 'ABSENT'
-              const isAbsent = statusType === 'ABSENT'
-              const isLate = statusType === 'LATE'
               const cleanPhone = cleanPhoneNumber(item.whatsapp_number)
+              const pct = Number(item.percentage) || 0
 
               return (
                 <div
@@ -366,16 +363,17 @@ export default function AttendanceDispatchModal({
                             {item.student_code}
                           </span>
                         )}
+                        {/* Score Pill */}
                         <span
-                          className={`text-xs px-2 py-0.5 rounded font-medium ${
-                            isAbsent
-                              ? 'bg-red-100 text-red-700'
-                              : isLate
-                              ? 'bg-amber-100 text-amber-700'
-                              : 'bg-blue-100 text-blue-700'
+                          className={`text-xs px-2.5 py-0.5 rounded-full font-semibold border ${
+                            pct >= 75
+                              ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                              : pct >= 50
+                              ? 'bg-amber-50 text-amber-700 border-amber-200'
+                              : 'bg-rose-50 text-rose-700 border-rose-200'
                           }`}
                         >
-                          {statusType}
+                          {item.obtained_marks}/{item.total_marks} ({item.percentage}%) · Grade {item.grade || '—'}
                         </span>
                         <span className="text-xs text-gray-500">
                           Guardian: <strong className="text-gray-700">{item.guardian_name}</strong>
@@ -399,7 +397,7 @@ export default function AttendanceDispatchModal({
                       <button
                         type="button"
                         onClick={() => handleSendSingle(item)}
-                        className={`text-xs font-semibold px-3.5 py-1.5 rounded-md flex items-center gap-1.5 transition-all shadow-xs cursor-pointer ${
+                        className={`text-xs font-semibold px-3.5 py-1.5 rounded-md flex items-center gap-1.5 transition-all shadow-xs ${
                           isSent
                             ? 'bg-emerald-100 hover:bg-emerald-200 text-emerald-800'
                             : 'bg-[#25D366] hover:bg-[#20ba5a] text-white'
@@ -426,7 +424,7 @@ export default function AttendanceDispatchModal({
                           type="button"
                           onClick={() => handleCopyMessage(item.student_id, item.message)}
                           title="Copy text"
-                          className="text-[11px] text-gray-400 hover:text-gray-600 px-1.5 py-0.5 rounded border border-gray-200 hover:bg-gray-50 transition-colors cursor-pointer"
+                          className="text-[11px] text-gray-400 hover:text-gray-600 px-1.5 py-0.5 rounded border border-gray-200 hover:bg-gray-50 transition-colors"
                         >
                           {copiedId === item.student_id ? 'Copied' : 'Copy'}
                         </button>
@@ -442,9 +440,8 @@ export default function AttendanceDispatchModal({
         {/* Footer */}
         <div className="flex items-center justify-between pt-2 border-t border-gray-200 text-xs text-gray-500">
           <span>
-            {sessionDate && `Date: ${sessionDate}`}
-            {className && ` · ${className}`}
-            {batchName && ` (${batchName})`}
+            {subject && `${subject} · `}
+            {testName}
           </span>
           <button
             type="button"
@@ -452,7 +449,7 @@ export default function AttendanceDispatchModal({
               pauseAutoDispatch()
               onClose()
             }}
-            className="bg-gray-100 hover:bg-gray-200 text-gray-700 font-medium px-4 py-2 rounded-md transition-colors cursor-pointer"
+            className="bg-gray-100 hover:bg-gray-200 text-gray-700 font-medium px-4 py-2 rounded-md transition-colors"
           >
             {sentCount === totalCount && totalCount > 0 ? 'Done' : 'Close'}
           </button>

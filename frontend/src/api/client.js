@@ -25,7 +25,7 @@ function resolveApiBaseUrl() {
 
 export const apiClient = axios.create({
   baseURL: resolveApiBaseUrl(),
-  timeout: 20000,
+  timeout: 60000,
 })
 
 /** Re-reads the resolved base URL (call after the Electron shell updates the server URL). */
@@ -138,27 +138,136 @@ export async function downloadFile(path, suggestedFilename) {
 }
 
 export function normalizeError(error) {
-  if (error.response?.data?.error) {
+  if (!error) {
+    return { _isNormalized: true, code: 'UNKNOWN_ERROR', message: 'An unknown error occurred.', status: 0 }
+  }
+
+  // 1. If error is already normalized, return it immediately (idempotent)
+  if (error._isNormalized || (error.code && error.message && typeof error.status !== 'undefined' && !error.isAxiosError)) {
     return {
-      code: error.response.data.error.code,
-      message: error.response.data.error.message,
+      _isNormalized: true,
+      code: error.code,
+      message: error.message,
+      status: error.status,
+    }
+  }
+
+  // 2. Structured error from our FastAPI backend: { error: { code, message } }
+  if (error.response?.data?.error) {
+    const code = error.response.data.error.code || 'APP_ERROR'
+    let message = error.response.data.error.message || 'Request failed.'
+
+    // Friendly message for invalid login credentials
+    if (code === 'AUTHENTICATION_ERROR' || error.response.status === 401) {
+      if (
+        message.toLowerCase().includes('invalid email or password') ||
+        message.toLowerCase().includes('authentication failed') ||
+        message.toLowerCase().includes('invalid credentials')
+      ) {
+        message = 'Incorrect email/username or password. Please check your credentials.'
+      }
+    }
+
+    return {
+      _isNormalized: true,
+      code,
+      message,
       status: error.response.status,
     }
   }
+
+  // 3. Pydantic / FastAPI validation error: { detail: ... }
   if (error.response?.data?.detail) {
     const detail = error.response.data.detail
-    const msg = typeof detail === 'string' ? detail : (Array.isArray(detail) ? detail.map((d) => d.msg || JSON.stringify(d)).join(', ') : JSON.stringify(detail))
+    const msg =
+      typeof detail === 'string'
+        ? detail
+        : Array.isArray(detail)
+          ? detail.map((d) => d.msg || JSON.stringify(d)).join(', ')
+          : JSON.stringify(detail)
     return {
+      _isNormalized: true,
       code: 'VALIDATION_ERROR',
       message: msg,
       status: error.response.status,
     }
   }
-  if (error.message?.includes('No refresh token') || error.response?.status === 401) {
-    return { code: 'UNAUTHORIZED', message: 'Session expired. Please log in again.', status: 401 }
+
+  // 4. Server internal error (HTTP 500, 502, 503, 504)
+  const status = error.response?.status
+  if (status && status >= 500) {
+    const serverMessage =
+      error.response?.data?.message || (typeof error.response?.data === 'string' ? error.response.data : null)
+    return {
+      _isNormalized: true,
+      code: 'SERVER_ERROR',
+      message:
+        serverMessage ||
+        `Server error (${status}). The server encountered an internal issue. Please try again later or contact administrator.`,
+      status,
+    }
   }
-  if (error.message === 'Network Error' || !error.response) {
-    return { code: 'NETWORK_ERROR', message: 'Unable to reach backend server (http://localhost:8000). Please ensure backend is running.', status: 0 }
+
+  // 5. 401 Unauthorized (session expired vs login failure)
+  if (status === 401 || error.message?.includes('No refresh token')) {
+    const isLoginEndpoint = error.config?.url?.includes('/auth/login')
+    return {
+      _isNormalized: true,
+      code: 'AUTHENTICATION_ERROR',
+      message: isLoginEndpoint
+        ? 'Incorrect email/username or password. Please check your credentials.'
+        : 'Session expired. Please log in again.',
+      status: 401,
+    }
   }
-  return { code: 'UNKNOWN_ERROR', message: error.message || 'An unexpected error occurred.', status: error.response?.status }
+
+  // 6. 403 Forbidden
+  if (status === 403) {
+    return {
+      _isNormalized: true,
+      code: 'FORBIDDEN',
+      message: 'You do not have permission to perform this action.',
+      status: 403,
+    }
+  }
+
+  // 7. 404 Not Found
+  if (status === 404) {
+    return {
+      _isNormalized: true,
+      code: 'NOT_FOUND',
+      message: 'The requested resource was not found.',
+      status: 404,
+    }
+  }
+
+  // 8. Connection timeout
+  if (error.code === 'ECONNABORTED' || error.message?.includes('timeout')) {
+    const target = resolveApiBaseUrl()
+    return {
+      _isNormalized: true,
+      code: 'TIMEOUT',
+      message: `Connection timed out (${target}). If the backend is hosted on a free cloud service, it may take up to a minute to wake up from sleep. Please try again.`,
+      status: 0,
+    }
+  }
+
+  // 9. True Network Error (backend offline, DNS resolution failure, connection refused)
+  if ((error.isAxiosError && !error.response) || error.code === 'ERR_NETWORK' || error.message === 'Network Error') {
+    const target = resolveApiBaseUrl()
+    return {
+      _isNormalized: true,
+      code: 'NETWORK_ERROR',
+      message: `Unable to reach backend server (${target}). Please ensure the backend is running and your internet connection is active.`,
+      status: 0,
+    }
+  }
+
+  // 10. Fallback for any other error
+  return {
+    _isNormalized: true,
+    code: 'UNKNOWN_ERROR',
+    message: error.message || 'An unexpected error occurred.',
+    status: status || 0,
+  }
 }

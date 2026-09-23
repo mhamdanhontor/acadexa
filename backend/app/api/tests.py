@@ -58,3 +58,24 @@ def get_test(test_id: int, db: Session = Depends(get_db), current_user: User = D
     if obj is None:
         raise NotFoundError("Test not found.")
     return obj
+
+
+@router.delete("/{test_id}", status_code=204)
+def delete_test(
+    test_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_roles(RoleName.SUPER_ADMIN, RoleName.ADMIN, RoleName.TEACHER)),
+):
+    obj = db.get(Test, test_id)
+    if obj is None:
+        raise NotFoundError("Test not found.")
+
+    from app.models.academics import Marks
+    db.query(Marks).filter(Marks.test_id == test_id).delete(synchronize_session=False)
+
+    test_name = obj.name
+    db.delete(obj)
+    record_audit(db, current_user.id, "TEST_DELETED", "test", test_id, f"Deleted test {test_name}")
+    db.commit()
+    return None
+

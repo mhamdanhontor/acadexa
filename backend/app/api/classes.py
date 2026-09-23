@@ -85,3 +85,33 @@ def update_class_status(
     db.commit()
     db.refresh(obj)
     return obj
+
+
+@router.delete("/{class_id}", status_code=204)
+def delete_class(
+    class_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_roles(RoleName.SUPER_ADMIN, RoleName.ADMIN)),
+):
+    obj = db.get(ClassRoom, class_id)
+    if obj is None:
+        raise NotFoundError("Class not found.")
+
+    from app.models.student import Student
+    active_students = db.query(Student).filter(Student.class_id == class_id, Student.is_active.is_(True)).count()
+    if active_students > 0:
+        raise ConflictError(f"Cannot delete class '{obj.name}' because {active_students} active student(s) are enrolled in it.", code="CLASS_HAS_STUDENTS")
+
+    from app.models.academics import Marks, Test
+    tests = db.query(Test).filter(Test.class_id == class_id).all()
+    test_ids = [t.id for t in tests]
+    if test_ids:
+        db.query(Marks).filter(Marks.test_id.in_(test_ids)).delete(synchronize_session=False)
+        db.query(Test).filter(Test.class_id == class_id).delete(synchronize_session=False)
+
+    class_name = obj.name
+    db.delete(obj)
+    record_audit(db, current_user.id, "CLASS_DELETED", "class", class_id, f"Deleted class {class_name}")
+    db.commit()
+    return None
+

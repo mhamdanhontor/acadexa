@@ -46,7 +46,72 @@ def test_bulk_attendance_save(client, auth_headers, setup_students):
     assert data["absent"] == 1
     assert data["late"] == 1
     assert data["leave"] == 1
-    assert data["notifications_queued"] == 1  # only the ABSENT student
+    assert data["notifications_queued"] == 3  # ABSENT, LEAVE, and LATE students
+    assert len(data["absent_notifications"]) == 3
+    types = {n["status_type"] for n in data["absent_notifications"]}
+    assert types == {"ABSENT", "LEAVE", "LATE"}
+
+
+def test_late_creates_notification_job(client, auth_headers, setup_students):
+    class_id, batch_id, student_ids = setup_students
+    payload = {
+        "date": "2026-09-15",
+        "class_id": class_id,
+        "batch_id": batch_id,
+        "records": [
+            {"student_id": student_ids[0], "status": "PRESENT"},
+            {"student_id": student_ids[1], "status": "LATE"},
+        ],
+    }
+    resp = client.post("/api/v1/attendance/bulk", json=payload, headers=auth_headers)
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["late"] == 1
+    assert data["notifications_queued"] == 1
+    assert len(data["absent_notifications"]) == 1
+    late_notif = data["absent_notifications"][0]
+    assert late_notif["student_id"] == student_ids[1]
+    assert late_notif["status_type"] == "LATE"
+    assert "LATE" in late_notif["message"]
+    assert "تاخیر" in late_notif["message"]
+    assert "web.whatsapp.com" in late_notif["whatsapp_web_url"]
+
+    notif_resp = client.get(f"/api/v1/notifications?student_id={student_ids[1]}", headers=auth_headers)
+    jobs = notif_resp.json()["items"]
+    assert len(jobs) == 1
+    assert "LATE" in jobs[0]["message"]
+    assert "تاخیر" in jobs[0]["message"]
+
+
+def test_leave_creates_notification_job(client, auth_headers, setup_students):
+    class_id, batch_id, student_ids = setup_students
+    payload = {
+        "date": "2026-09-15",
+        "class_id": class_id,
+        "batch_id": batch_id,
+        "records": [
+            {"student_id": student_ids[0], "status": "PRESENT"},
+            {"student_id": student_ids[1], "status": "LEAVE"},
+        ],
+    }
+    resp = client.post("/api/v1/attendance/bulk", json=payload, headers=auth_headers)
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["leave"] == 1
+    assert data["notifications_queued"] == 1
+    assert len(data["absent_notifications"]) == 1
+    leave_notif = data["absent_notifications"][0]
+    assert leave_notif["student_id"] == student_ids[1]
+    assert leave_notif["status_type"] == "LEAVE"
+    assert "LEAVE" in leave_notif["message"]
+    assert "رخصت" in leave_notif["message"]
+    assert "web.whatsapp.com" in leave_notif["whatsapp_web_url"]
+
+    notif_resp = client.get(f"/api/v1/notifications?student_id={student_ids[1]}", headers=auth_headers)
+    jobs = notif_resp.json()["items"]
+    assert len(jobs) == 1
+    assert "LEAVE" in jobs[0]["message"]
+    assert "رخصت" in jobs[0]["message"]
 
 
 def test_absence_creates_notification_job_only_for_absent(client, auth_headers, setup_students):
@@ -209,7 +274,10 @@ def test_get_absent_notifications_endpoint(client, auth_headers, setup_students)
             "date": "2026-09-17",
             "class_id": class_id,
             "batch_id": batch_id,
-            "records": [{"student_id": student_ids[0], "status": "ABSENT"}],
+            "records": [
+                {"student_id": student_ids[0], "status": "ABSENT"},
+                {"student_id": student_ids[1], "status": "LEAVE"},
+            ],
         },
         headers=auth_headers,
     )
@@ -220,9 +288,14 @@ def test_get_absent_notifications_endpoint(client, auth_headers, setup_students)
     )
     assert resp.status_code == 200
     absentees = resp.json()
-    assert len(absentees) == 1
-    assert absentees[0]["student_id"] == student_ids[0]
-    assert "web.whatsapp.com" in absentees[0]["whatsapp_web_url"]
+    assert len(absentees) == 2
+    types = {a["status_type"]: a for a in absentees}
+    assert "ABSENT" in types
+    assert "LEAVE" in types
+    assert types["ABSENT"]["student_id"] == student_ids[0]
+    assert types["LEAVE"]["student_id"] == student_ids[1]
+    assert "LEAVE" in types["LEAVE"]["message"]
+    assert "web.whatsapp.com" in types["LEAVE"]["whatsapp_web_url"]
 
 
 def test_mark_notification_sent_endpoint(client, auth_headers, setup_students):

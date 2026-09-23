@@ -39,7 +39,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title=settings.APP_NAME,
-    version="1.0.0",
+    version="1.0.1",
     docs_url="/docs" if settings.ENABLE_DOCS else None,
     redoc_url="/redoc" if settings.ENABLE_DOCS else None,
     lifespan=lifespan,
@@ -51,7 +51,7 @@ has_wildcard = "*" in cors_origins
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[] if has_wildcard else cors_origins,
-    allow_origin_regex=".*" if has_wildcard else r"^https?://(localhost|127\.0\.0\.1)(:\d+)?$",
+    allow_origin_regex=".*" if has_wildcard else r"^(https?://(localhost|127\.0\.0\.1)(:\d+)?|file://|null)$",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

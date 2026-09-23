@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { listSubjects, createSubject, setSubjectStatus } from '../api/academicStructure'
+import { listSubjects, createSubject, setSubjectStatus, deleteSubject } from '../api/academicStructure'
 import { normalizeError } from '../api/client'
 import { useAuth } from '../context/AuthContext'
 import PageHeader from '../components/PageHeader'
@@ -8,6 +8,7 @@ import ErrorAlert from '../components/ErrorAlert'
 import EmptyState from '../components/EmptyState'
 import StatusBadge from '../components/StatusBadge'
 import Modal from '../components/Modal'
+import ConfirmDeleteModal from '../components/ConfirmDeleteModal'
 
 export default function SubjectsPage() {
   const { hasRole } = useAuth()
@@ -20,6 +21,7 @@ export default function SubjectsPage() {
   const [name, setName] = useState('')
   const [saving, setSaving] = useState(false)
   const [formError, setFormError] = useState('')
+  const [deleteModal, setDeleteModal] = useState({ open: false, id: null, name: '', loading: false })
 
   async function load() {
     setLoading(true)
@@ -63,6 +65,22 @@ export default function SubjectsPage() {
     }
   }
 
+  function confirmDelete(subj) {
+    setDeleteModal({ open: true, id: subj.id, name: subj.name, loading: false })
+  }
+
+  async function handleDeleteConfirm() {
+    setDeleteModal((prev) => ({ ...prev, loading: true }))
+    try {
+      await deleteSubject(deleteModal.id)
+      setDeleteModal({ open: false, id: null, name: '', loading: false })
+      load()
+    } catch (err) {
+      setError(normalizeError(err).message)
+      setDeleteModal((prev) => ({ ...prev, loading: false }))
+    }
+  }
+
   return (
     <div>
       <PageHeader
@@ -99,9 +117,12 @@ export default function SubjectsPage() {
                   <td className="px-5 py-3 font-medium text-gray-800">{subj.name}</td>
                   <td className="px-5 py-3"><StatusBadge status={subj.is_active} /></td>
                   {canManage && (
-                    <td className="px-5 py-3 text-right">
+                    <td className="px-5 py-3 text-right space-x-3">
                       <button onClick={() => toggleStatus(subj)} className="text-gray-500 hover:text-gray-700">
                         {subj.is_active ? 'Deactivate' : 'Activate'}
+                      </button>
+                      <button onClick={() => confirmDelete(subj)} className="text-red-500 hover:text-red-700">
+                        Delete
                       </button>
                     </td>
                   )}
@@ -135,6 +156,16 @@ export default function SubjectsPage() {
           </div>
         </form>
       </Modal>
+
+      <ConfirmDeleteModal
+        open={deleteModal.open}
+        title="Delete Subject"
+        itemName={deleteModal.name}
+        message="Are you sure you want to delete this subject? All tests and marks under this subject will also be deleted."
+        loading={deleteModal.loading}
+        onConfirm={handleDeleteConfirm}
+        onClose={() => setDeleteModal({ open: false, id: null, name: '', loading: false })}
+      />
     </div>
   )
 }

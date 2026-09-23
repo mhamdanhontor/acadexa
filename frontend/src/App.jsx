@@ -12,6 +12,7 @@ import AttendancePage from './pages/AttendancePage'
 import QuickAttendancePage from './pages/QuickAttendancePage'
 import TestsPage from './pages/TestsPage'
 import MarksPage from './pages/MarksPage'
+import QuickMarksPage from './pages/QuickMarksPage'
 import ReportsPage from './pages/ReportsPage'
 import NotificationsPage from './pages/NotificationsPage'
 import UsersPage from './pages/UsersPage'
@@ -45,6 +46,8 @@ export default function App() {
             <Route path="quick-attendance" element={<Navigate to="/attendance/quick" replace />} />
             <Route path="tests" element={<TestsPage />} />
             <Route path="marks" element={<MarksPage />} />
+            <Route path="marks/quick" element={<QuickMarksPage />} />
+            <Route path="quick-marks" element={<Navigate to="/marks/quick" replace />} />
             <Route path="reports" element={<ReportsPage />} />
             <Route path="notifications" element={<NotificationsPage />} />
             <Route

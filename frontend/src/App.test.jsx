@@ -175,7 +175,7 @@ describe('All Pages Render Without Crashing', () => {
 
   it('renders TestsPage', async () => {
     render(<MemoryRouter><TestsPage /></MemoryRouter>)
-    expect(await screen.findByText('Tests')).toBeDefined()
+    expect(await screen.findByText(/Tests & Sessions/)).toBeDefined()
   })
 
   it('renders MarksPage', async () => {

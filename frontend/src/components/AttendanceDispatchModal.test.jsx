@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from 'vitest'
-import { render, screen, cleanup, fireEvent } from '@testing-library/react'
+import { render, screen, cleanup, fireEvent, act } from '@testing-library/react'
 import React from 'react'
 import AttendanceDispatchModal from './AttendanceDispatchModal'
 
@@ -11,6 +11,8 @@ afterEach(() => {
 vi.mock('../utils/whatsapp', () => ({
   cleanPhoneNumber: (num) => num.replace(/\D/g, ''),
   openWhatsApp: vi.fn(),
+  getStoredWhatsAppTarget: vi.fn().mockReturnValue('desktop'),
+  setStoredWhatsAppTarget: vi.fn(),
 }))
 
 vi.mock('../api/notifications', () => ({
@@ -81,7 +83,72 @@ describe('AttendanceDispatchModal', () => {
     const sendButtons = screen.getAllByRole('button', { name: /Send via WhatsApp/i })
     fireEvent.click(sendButtons[0])
 
-    expect(openWhatsApp).toHaveBeenCalledWith('923001234567', mockDispatches[0].message, 'web')
+    expect(openWhatsApp).toHaveBeenCalledWith('923001234567', mockDispatches[0].message, 'desktop')
     expect(markNotificationSent).toHaveBeenCalledWith(101)
+  })
+
+  it('supports absentees prop as an alias for dispatches', () => {
+    render(
+      <AttendanceDispatchModal
+        open={true}
+        onClose={vi.fn()}
+        absentees={mockDispatches}
+        sessionDate="2026-09-19"
+      />
+    )
+
+    expect(screen.getByText('Zain Ali')).toBeDefined()
+    expect(screen.getByText('Fatima Noor')).toBeDefined()
+  })
+
+  it('automatically triggers first student when autoSendFirst is true', async () => {
+    const { openWhatsApp } = await import('../utils/whatsapp')
+    const { markNotificationSent } = await import('../api/notifications')
+
+    render(
+      <AttendanceDispatchModal
+        open={true}
+        onClose={vi.fn()}
+        dispatches={mockDispatches}
+        sessionDate="2026-09-19"
+        autoSendFirst={true}
+      />
+    )
+
+    expect(openWhatsApp).toHaveBeenCalledWith('923001234567', mockDispatches[0].message, 'desktop')
+    expect(markNotificationSent).toHaveBeenCalledWith(101)
+  })
+
+  it('handles auto-dispatch with 10s delay countdown pacing between messages', async () => {
+    vi.useFakeTimers()
+    const { openWhatsApp } = await import('../utils/whatsapp')
+
+    render(
+      <AttendanceDispatchModal
+        open={true}
+        onClose={vi.fn()}
+        dispatches={mockDispatches}
+        sessionDate="2026-09-19"
+      />
+    )
+
+    // Click Auto-Dispatch (10s Delay) button
+    const autoBtn = screen.getByRole('button', { name: /Auto-Dispatch \(10s Delay\)/i })
+    fireEvent.click(autoBtn)
+
+    // First student sent immediately
+    expect(openWhatsApp).toHaveBeenCalledTimes(1)
+    expect(openWhatsApp).toHaveBeenCalledWith('923001234567', mockDispatches[0].message, 'desktop')
+
+    // Advance by 10 seconds
+    act(() => {
+      vi.advanceTimersByTime(10000)
+    })
+
+    // Second student sent after 10s delay
+    expect(openWhatsApp).toHaveBeenCalledTimes(2)
+    expect(openWhatsApp).toHaveBeenCalledWith('923007654321', mockDispatches[1].message, 'desktop')
+
+    vi.useRealTimers()
   })
 })

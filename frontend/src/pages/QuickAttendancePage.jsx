@@ -9,6 +9,7 @@ import Spinner from '../components/Spinner'
 import ErrorAlert from '../components/ErrorAlert'
 import EmptyState from '../components/EmptyState'
 import AttendanceDispatchModal from '../components/AttendanceDispatchModal'
+import AttendanceAlreadyMarkedModal from '../components/AttendanceAlreadyMarkedModal'
 
 const STATUS_OPTIONS = [
   { value: 'PRESENT', label: 'Present', activeClass: 'bg-green-600 text-white shadow-xs' },
@@ -46,6 +47,12 @@ export default function QuickAttendancePage() {
   // WhatsApp Dispatch modal state
   const [dispatchModalOpen, setDispatchModalOpen] = useState(false)
   const [dispatches, setDispatches] = useState([])
+  const [autoSendFirst, setAutoSendFirst] = useState(false)
+
+  // Attendance already marked modal state
+  const [alreadyMarkedModalOpen, setAlreadyMarkedModalOpen] = useState(false)
+  const [alreadyMarkedCheckedDate, setAlreadyMarkedCheckedDate] = useState('')
+  const [alreadyMarkedCounts, setAlreadyMarkedCounts] = useState({ PRESENT: 0, ABSENT: 0, LATE: 0, LEAVE: 0 })
 
   const hasUnsavedChanges = useMemo(
     () => JSON.stringify(statusMap) !== JSON.stringify(savedStatusMap),
@@ -78,6 +85,20 @@ export default function QuickAttendancePage() {
       })
       setStatusMap(map)
       setSavedStatusMap(map)
+
+      const markedItems = items.filter((s) => s.attendance_id != null)
+      const today = new Date().toISOString().slice(0, 10)
+      if (markedItems.length > 0 && date === today && alreadyMarkedCheckedDate !== date) {
+        setAlreadyMarkedCheckedDate(date)
+        const counts = { PRESENT: 0, ABSENT: 0, LATE: 0, LEAVE: 0 }
+        markedItems.forEach((s) => {
+          if (counts[s.current_status] !== undefined) {
+            counts[s.current_status]++
+          }
+        })
+        setAlreadyMarkedCounts(counts)
+        setAlreadyMarkedModalOpen(true)
+      }
     } catch (err) {
       setError(normalizeError(err).message)
     } finally {
@@ -167,6 +188,7 @@ export default function QuickAttendancePage() {
 
       if (Array.isArray(result.dispatches) && result.dispatches.length > 0) {
         setDispatches(result.dispatches)
+        setAutoSendFirst(true)
         setDispatchModalOpen(true)
       }
     } catch (err) {
@@ -329,7 +351,10 @@ export default function QuickAttendancePage() {
           {dispatches.length > 0 && (
             <button
               type="button"
-              onClick={() => setDispatchModalOpen(true)}
+              onClick={() => {
+                setAutoSendFirst(false)
+                setDispatchModalOpen(true)
+              }}
               className="bg-[#25D366] hover:bg-[#20ba5a] text-white text-xs font-semibold px-3 py-1.5 rounded shadow-xs flex items-center gap-1.5"
             >
               <i className="fab fa-whatsapp"></i>
@@ -382,7 +407,10 @@ export default function QuickAttendancePage() {
           {dispatches.length > 0 && (
             <button
               type="button"
-              onClick={() => setDispatchModalOpen(true)}
+              onClick={() => {
+                setAutoSendFirst(false)
+                setDispatchModalOpen(true)
+              }}
               className="bg-[#25D366] hover:bg-[#20ba5a] text-white text-xs font-semibold px-3.5 py-2 rounded-lg shadow-xs flex items-center gap-1.5 transition-all shrink-0 cursor-pointer"
             >
               <i className="fab fa-whatsapp text-sm"></i>
@@ -518,6 +546,22 @@ export default function QuickAttendancePage() {
         onClose={() => setDispatchModalOpen(false)}
         dispatches={dispatches}
         sessionDate={date}
+        autoSendFirst={autoSendFirst}
+      />
+
+      {/* Attendance Already Marked Today Modal */}
+      <AttendanceAlreadyMarkedModal
+        open={alreadyMarkedModalOpen}
+        onClose={() => setAlreadyMarkedModalOpen(false)}
+        sessionDate={date}
+        className="All Classes & Batches"
+        batchName=""
+        counts={alreadyMarkedCounts}
+        totalStudents={students.length}
+        onOpenWhatsApp={() => {
+          setAutoSendFirst(false)
+          setDispatchModalOpen(true)
+        }}
       />
     </div>
   )

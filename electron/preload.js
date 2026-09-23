@@ -25,4 +25,5 @@ contextBridge.exposeInMainWorld('acadexaDesktop', {
   saveServerUrl: (url) => ipcRenderer.invoke('acadexa:save-server-url', url),
   testConnection: (url) => ipcRenderer.invoke('acadexa:test-connection', url),
   reconfigure: () => ipcRenderer.invoke('acadexa:load-app'),
+  openExternal: (url) => ipcRenderer.invoke('acadexa:open-external', url),
 })

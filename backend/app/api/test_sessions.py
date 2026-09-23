@@ -3,6 +3,7 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
 from app.core.deps import get_current_user, require_roles
+from app.core.errors import NotFoundError
 from app.db.session import get_db
 from app.models.academics import TestSession
 from app.models.enums import RoleName
@@ -31,3 +32,28 @@ def create_test_session(
     db.commit()
     db.refresh(obj)
     return obj
+
+
+@router.delete("/{session_id}", status_code=204)
+def delete_test_session(
+    session_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_roles(RoleName.SUPER_ADMIN, RoleName.ADMIN)),
+):
+    obj = db.get(TestSession, session_id)
+    if obj is None:
+        raise NotFoundError("Test session not found.")
+
+    from app.models.academics import Marks, Test
+    tests = db.query(Test).filter(Test.session_id == session_id).all()
+    test_ids = [t.id for t in tests]
+    if test_ids:
+        db.query(Marks).filter(Marks.test_id.in_(test_ids)).delete(synchronize_session=False)
+        db.query(Test).filter(Test.session_id == session_id).delete(synchronize_session=False)
+
+    session_name = obj.name
+    db.delete(obj)
+    record_audit(db, current_user.id, "TEST_SESSION_DELETED", "test_session", session_id, f"Deleted session {session_name}")
+    db.commit()
+    return None
+

@@ -9,7 +9,8 @@ import PageHeader from '../components/PageHeader'
 import Spinner from '../components/Spinner'
 import ErrorAlert from '../components/ErrorAlert'
 import EmptyState from '../components/EmptyState'
-import AbsenceWhatsAppModal from '../components/AbsenceWhatsAppModal'
+import AttendanceDispatchModal from '../components/AttendanceDispatchModal'
+import AttendanceAlreadyMarkedModal from '../components/AttendanceAlreadyMarkedModal'
 
 const STATUS_OPTIONS = [
   { value: 'PRESENT', label: 'Present', activeClass: 'bg-green-600 text-white' },
@@ -39,6 +40,12 @@ export default function AttendancePage() {
   const [successMsg, setSuccessMsg] = useState('')
   const [whatsappModalOpen, setWhatsappModalOpen] = useState(false)
   const [absentees, setAbsentees] = useState([])
+  const [autoSendFirst, setAutoSendFirst] = useState(false)
+
+  // Attendance already marked modal state
+  const [alreadyMarkedModalOpen, setAlreadyMarkedModalOpen] = useState(false)
+  const [alreadyMarkedCheckedKey, setAlreadyMarkedCheckedKey] = useState('')
+  const [alreadyMarkedCounts, setAlreadyMarkedCounts] = useState({ PRESENT: 0, ABSENT: 0, LATE: 0, LEAVE: 0 })
 
   const hasUnsavedChanges = useMemo(
     () => JSON.stringify(statusMap) !== JSON.stringify(savedStatusMap),
@@ -85,6 +92,20 @@ export default function AttendancePage() {
       })
       setStatusMap(map)
       setSavedStatusMap(map)
+
+      const key = `${classId}-${batchId}-${date}`
+      const todayISO = new Date().toISOString().slice(0, 10)
+      if (recs.length > 0 && date === todayISO && alreadyMarkedCheckedKey !== key) {
+        setAlreadyMarkedCheckedKey(key)
+        const markedCounts = { PRESENT: 0, ABSENT: 0, LATE: 0, LEAVE: 0 }
+        recs.forEach((r) => {
+          if (markedCounts[r.status] !== undefined) {
+            markedCounts[r.status]++
+          }
+        })
+        setAlreadyMarkedCounts(markedCounts)
+        setAlreadyMarkedModalOpen(true)
+      }
     } catch (err) {
       setError(normalizeError(err).message)
     } finally {
@@ -114,6 +135,7 @@ export default function AttendancePage() {
     try {
       const data = await getAbsentNotifications({ date, class_id: Number(classId), batch_id: Number(batchId) })
       setAbsentees(Array.isArray(data) ? data : [])
+      setAutoSendFirst(false)
       setWhatsappModalOpen(true)
     } catch (err) {
       setError(normalizeError(err).message)
@@ -133,11 +155,13 @@ export default function AttendancePage() {
         records,
       })
       setSavedStatusMap(statusMap)
+      const notifyCount = (result.absent || 0) + (result.leave || 0) + (result.late || 0)
       setSuccessMsg(
         `Saved. Present: ${result.present}, Absent: ${result.absent}, Late: ${result.late}, Leave: ${result.leave}. ` +
-          `Absence notifications queued: ${result.notifications_queued}.`
+          `WhatsApp notifications queued: ${result.notifications_queued}.`
       )
-      if (result.absent > 0) {
+      if (notifyCount > 0) {
+        setAutoSendFirst(true)
         if (Array.isArray(result.absent_notifications) && result.absent_notifications.length > 0) {
           setAbsentees(result.absent_notifications)
           setWhatsappModalOpen(true)
@@ -244,7 +268,7 @@ export default function AttendancePage() {
             ))}
           </div>
 
-          {counts['ABSENT'] > 0 && (
+          {((counts['ABSENT'] || 0) + (counts['LEAVE'] || 0) + (counts['LATE'] || 0)) > 0 && (
             <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-3.5 mb-4 flex flex-wrap items-center justify-between gap-3 shadow-xs">
               <div className="flex items-center gap-3">
                 <div className="w-9 h-9 rounded-full bg-[#25D366] text-white flex items-center justify-center shrink-0 text-lg shadow-xs">
@@ -252,10 +276,10 @@ export default function AttendancePage() {
                 </div>
                 <div>
                   <span className="text-sm font-semibold text-emerald-950">
-                    {counts['ABSENT']} student{counts['ABSENT'] > 1 ? 's' : ''} marked Absent
+                    {(counts['ABSENT'] || 0) + (counts['LEAVE'] || 0) + (counts['LATE'] || 0)} student{((counts['ABSENT'] || 0) + (counts['LEAVE'] || 0) + (counts['LATE'] || 0)) > 1 ? 's' : ''} marked Absent, Late or on Leave
                   </span>
                   <p className="text-xs text-emerald-800">
-                    Send WhatsApp absence alerts directly to parents from your Admin WhatsApp.
+                    Send WhatsApp absence alerts, late arrival notices, and approved leave acknowledgments directly to parents from your Admin WhatsApp.
                   </p>
                 </div>
               </div>
@@ -265,7 +289,7 @@ export default function AttendancePage() {
                 className="bg-[#25D366] hover:bg-[#20ba5a] text-white text-xs font-semibold px-4 py-2 rounded-lg shadow-xs flex items-center gap-2 transition-all shrink-0 cursor-pointer"
               >
                 <i className="fab fa-whatsapp text-sm"></i>
-                Send WhatsApp to Absent ({counts['ABSENT']})
+                Send WhatsApp ({(counts['ABSENT'] || 0) + (counts['LEAVE'] || 0) + (counts['LATE'] || 0)})
               </button>
             </div>
           )}
@@ -321,13 +345,25 @@ export default function AttendancePage() {
         </>
       )}
 
-      <AbsenceWhatsAppModal
+      <AttendanceDispatchModal
         open={whatsappModalOpen}
         onClose={() => setWhatsappModalOpen(false)}
         absentees={absentees}
         sessionDate={date}
         className={classes.find((c) => String(c.id) === String(classId))?.name || ''}
         batchName={batches.find((b) => String(b.id) === String(batchId))?.name || ''}
+        autoSendFirst={autoSendFirst}
+      />
+
+      <AttendanceAlreadyMarkedModal
+        open={alreadyMarkedModalOpen}
+        onClose={() => setAlreadyMarkedModalOpen(false)}
+        sessionDate={date}
+        className={classes.find((c) => String(c.id) === String(classId))?.name || ''}
+        batchName={batches.find((b) => String(b.id) === String(batchId))?.name || ''}
+        counts={alreadyMarkedCounts}
+        totalStudents={students.length}
+        onOpenWhatsApp={loadAndOpenWhatsAppModal}
       />
     </div>
   )
