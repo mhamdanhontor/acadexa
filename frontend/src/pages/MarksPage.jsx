@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import { listTestSessions, listTests, listMarks, saveBulkMarks, updateTest } from '../api/academics'
+import { listTestSessions, listTests, listMarks, saveBulkMarks, updateTest, getTest } from '../api/academics'
 import { listSubjects, listClasses, listBatches } from '../api/academicStructure'
 import { listStudents } from '../api/students'
 import { normalizeError } from '../api/client'
@@ -13,17 +13,18 @@ import MarksDispatchModal from '../components/MarksDispatchModal'
 
 export default function MarksPage() {
   const [searchParams] = useSearchParams()
-  const initialSessionId = searchParams.get('session_id') || ''
-  const initialTestId = searchParams.get('test_id') || ''
+  const paramSessionId = searchParams.get('session_id') || ''
+  const paramSubjectId = searchParams.get('subject_id') || ''
+  const paramTestId = searchParams.get('test_id') || ''
 
   const [sessions, setSessions] = useState([])
-  const [sessionId, setSessionId] = useState(initialSessionId)
+  const [sessionId, setSessionId] = useState(paramSessionId)
   const [subjects, setSubjects] = useState([])
-  const [subjectId, setSubjectId] = useState('')
+  const [subjectId, setSubjectId] = useState(paramSubjectId)
   const [classes, setClasses] = useState([])
   const [batches, setBatches] = useState([])
   const [tests, setTests] = useState([])
-  const [testId, setTestId] = useState(initialTestId)
+  const [testId, setTestId] = useState(paramTestId)
   const [selectedTest, setSelectedTest] = useState(null)
 
   const [students, setStudents] = useState([])
@@ -44,6 +45,19 @@ export default function MarksPage() {
     [marksMap, savedMarksMap]
   )
   useUnsavedChangesWarning(hasUnsavedChanges)
+
+  // React to URL search param changes
+  useEffect(() => {
+    const sId = searchParams.get('session_id') || ''
+    const subId = searchParams.get('subject_id') || ''
+    const tId = searchParams.get('test_id') || ''
+    if (sId && sId !== sessionId) setSessionId(sId)
+    if (subId && subId !== subjectId) setSubjectId(subId)
+    if (tId && tId !== testId) {
+      setTestId(tId)
+      loadRoster(tId)
+    }
+  }, [searchParams])
 
   useEffect(() => {
     Promise.all([
@@ -74,30 +88,45 @@ export default function MarksPage() {
       .then((t) => {
         const items = Array.isArray(t) ? t : t?.items || []
         setTests(items)
-        if (initialTestId && items.some((item) => String(item.id) === String(initialTestId))) {
-          const match = items.find((item) => String(item.id) === String(initialTestId))
-          if (match && !subjectId) {
-            setSubjectId(String(match.subject_id))
+        if (testId) {
+          const match = items.find((item) => String(item.id) === String(testId))
+          if (match) {
+            setSelectedTest(match)
           }
         }
       })
       .catch((err) => setError(normalizeError(err).message))
-  }, [sessionId, subjectId, initialTestId])
+  }, [sessionId, subjectId])
 
-  async function loadRoster() {
-    if (!testId) return
+  async function loadRoster(targetTestId = testId, testList = tests) {
+    const activeTestId = targetTestId || testId
+    if (!activeTestId) return
     if (hasUnsavedChanges && !confirmLeaveIfUnsaved(true)) return
 
     setLoading(true)
     setError(null)
     setSuccessMsg('')
     try {
-      const test = (tests || []).find((t) => t.id === Number(testId))
+      // Find in testList or fetch directly from backend API
+      let test = (testList || []).find((t) => String(t.id) === String(activeTestId))
+      if (!test && activeTestId) {
+        try {
+          test = await getTest(activeTestId)
+        } catch {
+          test = null
+        }
+      }
       if (!test) {
         setLoading(false)
         return
       }
       setSelectedTest(test)
+      if (test.session_id && (!sessionId || String(sessionId) !== String(test.session_id))) {
+        setSessionId(String(test.session_id))
+      }
+      if (test.subject_id && (!subjectId || String(subjectId) !== String(test.subject_id))) {
+        setSubjectId(String(test.subject_id))
+      }
 
       // Multi-tier resilient student roster retrieval:
       let rawStudents = []
@@ -153,7 +182,7 @@ export default function MarksPage() {
         }
       }
 
-      const existingMarks = await listMarks({ test_id: testId, page_size: 200 }).catch(() => [])
+      const existingMarks = await listMarks({ test_id: activeTestId, page_size: 200 }).catch(() => [])
 
       // Sort in ascending order of Student ID (natural numeric sorting: e.g. HKA-0001, HKA-0002)
       const sItems = [...rawStudents].sort((a, b) =>
@@ -212,7 +241,9 @@ export default function MarksPage() {
   }
 
   useEffect(() => {
-    loadRoster()
+    if (testId) {
+      loadRoster(testId, tests)
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [testId])
 
@@ -408,16 +439,21 @@ export default function MarksPage() {
           <select
             value={testId}
             onChange={(e) => setTestId(e.target.value)}
-            disabled={!sessionId || tests.length === 0}
+            disabled={!sessionId && !testId && tests.length === 0}
             className="rounded-md border border-gray-300 px-3 py-2 text-sm disabled:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-indigo-500 font-medium"
           >
             <option value="">
-              {!sessionId
+              {!sessionId && !testId
                 ? 'Select session first'
-                : tests.length === 0
+                : tests.length === 0 && !selectedTest
                 ? 'No tests found'
                 : 'Select test'}
             </option>
+            {selectedTest && !tests.some((t) => String(t.id) === String(selectedTest.id)) && (
+              <option value={selectedTest.id}>
+                {selectedTest.name} ({selectedTest.test_date})
+              </option>
+            )}
             {tests.map((t) => (
               <option key={t.id} value={t.id}>
                 {t.name} ({t.test_date})
@@ -520,7 +556,8 @@ export default function MarksPage() {
                 <tr>
                   <th className="px-5 py-3 font-medium">Student ID</th>
                   <th className="px-5 py-3 font-medium">Name</th>
-                  <th className="px-5 py-3 font-medium">Batch</th>
+                  <th className="px-5 py-3 font-medium">Class & Batch</th>
+                  <th className="px-5 py-3 font-medium">Guardian & WhatsApp</th>
                   <th className="px-5 py-3 font-medium">Obtained Marks</th>
                   <th className="px-5 py-3 font-medium">Percentage</th>
                   <th className="px-5 py-3 font-medium">Grade</th>
@@ -531,13 +568,25 @@ export default function MarksPage() {
                   const value = marksMap[s.id] ?? ''
                   const pct = value !== '' && selectedTest ? ((Number(value) / selectedTest.total_marks) * 100).toFixed(1) : '—'
                   return (
-                    <tr key={s.id}>
+                    <tr key={s.id} className="hover:bg-gray-50/60 transition-colors">
                       <td className="px-5 py-3 font-mono text-xs font-bold text-indigo-700">{s.student_code}</td>
                       <td className="px-5 py-3 font-medium text-gray-800">{s.name}</td>
                       <td className="px-5 py-3 text-gray-600">
-                        <span className="text-xs bg-gray-100 text-gray-700 px-2 py-0.5 rounded-md font-medium border border-gray-200">
-                          {s.batch?.name || '—'}
+                        <span className="text-xs bg-indigo-50 text-indigo-700 px-2 py-0.5 rounded-md font-medium border border-indigo-100 mr-1.5">
+                          {s.class_room?.name || classes.find((c) => c.id === s.class_id)?.name || 'Class'}
                         </span>
+                        <span className="text-xs bg-gray-100 text-gray-700 px-2 py-0.5 rounded-md font-medium border border-gray-200">
+                          {s.batch?.name || batches.find((b) => b.id === s.batch_id)?.name || 'All Batches'}
+                        </span>
+                      </td>
+                      <td className="px-5 py-3 text-gray-600 text-xs">
+                        <span className="text-gray-900 font-medium">{s.guardian_name || 'Guardian'}</span>
+                        {s.whatsapp_number && (
+                          <span className="text-emerald-700 block text-[11px] font-mono mt-0.5">
+                            <i className="fab fa-whatsapp mr-1 text-emerald-600"></i>
+                            {s.whatsapp_number}
+                          </span>
+                        )}
                       </td>
                       <td className="px-5 py-3">
                         <input
@@ -553,8 +602,8 @@ export default function MarksPage() {
                         />
                         {rowErrors[s.id] && <p className="text-xs text-red-600 mt-1">{rowErrors[s.id]}</p>}
                       </td>
-                      <td className="px-5 py-3 text-gray-600">{pct === '—' ? '—' : `${pct}%`}</td>
-                      <td className="px-5 py-3 text-gray-600">{grade(value)}</td>
+                      <td className="px-5 py-3 text-gray-600 font-medium">{pct === '—' ? '—' : `${pct}%`}</td>
+                      <td className="px-5 py-3 text-gray-600 font-semibold">{grade(value)}</td>
                     </tr>
                   )
                 })}

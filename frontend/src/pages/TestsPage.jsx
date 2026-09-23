@@ -813,7 +813,7 @@ export default function TestsPage() {
                             <td className="px-5 py-3.5 text-right space-x-2">
                               <button
                                 type="button"
-                                onClick={() => navigate(`/marks?session_id=${t.session_id}&test_id=${t.id}`)}
+                                onClick={() => navigate(`/marks?session_id=${t.session_id}&subject_id=${t.subject_id}&test_id=${t.id}`)}
                                 className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-xs font-semibold transition-colors cursor-pointer"
                               >
                                 <i className="fas fa-list-ol text-[11px]"></i>
