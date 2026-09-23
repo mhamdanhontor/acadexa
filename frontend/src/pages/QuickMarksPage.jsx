@@ -54,6 +54,7 @@ export default function QuickMarksPage() {
     setError(null)
     try {
       // Fetch active students across all classes and batches
+      const data = await listStudents({ page_size: 500, is_active: true })
       const rawItems = Array.isArray(data) ? data : data?.items || []
       const items = [...rawItems].sort((a, b) =>
         (a.student_code || '').localeCompare(b.student_code || '', undefined, { numeric: true }) || (a.id - b.id)

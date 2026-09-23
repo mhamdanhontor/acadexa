@@ -138,3 +138,37 @@ def test_approve_and_send_single_click(client, auth_headers):
     report_notifs = [n for n in notifs if n["type"] == "MONTHLY_REPORT"]
     assert len(report_notifs) == 1
     assert report_notifs[0]["recipient"] == "+923001112222"
+
+
+def test_dashboard_summary_includes_late_in_percentage(client, auth_headers):
+    # Call dashboard summary when empty
+    resp = client.get("/api/v1/dashboard/summary", headers=auth_headers)
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["attendance_percentage_today"] == 0.0
+
+    # Add class, batch, student, and today's attendance (1 late)
+    c_id = client.post("/api/v1/classes", json={"name": "DashClass"}, headers=auth_headers).json()["id"]
+    b_id = client.post("/api/v1/batches", json={"name": "DashBatch"}, headers=auth_headers).json()["id"]
+    sid = client.post(
+        "/api/v1/students",
+        json={"student_code": "DASH-01", "name": "Dash Student", "whatsapp_number": "923001239999", "class_id": c_id, "batch_id": b_id},
+        headers=auth_headers,
+    ).json()["id"]
+
+    from datetime import date
+    today_str = date.today().isoformat()
+    client.post(
+        "/api/v1/attendance/bulk",
+        json={"date": today_str, "class_id": c_id, "batch_id": b_id, "records": [{"student_id": sid, "status": "LATE"}]},
+        headers=auth_headers,
+    )
+
+    resp2 = client.get("/api/v1/dashboard/summary", headers=auth_headers)
+    assert resp2.status_code == 200
+    d2 = resp2.json()
+    assert d2["total_students"] == 1
+    assert d2["late_today"] == 1
+    # Late counts as present, so 1 late out of 1 marked = 100%
+    assert d2["attendance_percentage_today"] == 100.0
+

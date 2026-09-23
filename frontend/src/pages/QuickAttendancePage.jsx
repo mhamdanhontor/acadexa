@@ -75,6 +75,7 @@ export default function QuickAttendancePage() {
     setError(null)
     setSuccessMsg('')
     try {
+      const data = await getAllEnrolledAttendance(date)
       const rawItems = Array.isArray(data) ? data : []
       const items = [...rawItems].sort((a, b) =>
         (a.student_code || '').localeCompare(b.student_code || '', undefined, { numeric: true }) || ((a.student_id || 0) - (b.student_id || 0))

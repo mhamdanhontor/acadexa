@@ -42,6 +42,7 @@ def dashboard_summary(db: Session = Depends(get_db), current_user: User = Depend
     absent_today = status_counts.get(AttendanceStatus.ABSENT, 0)
     late_today = status_counts.get(AttendanceStatus.LATE, 0)
     leave_today = status_counts.get(AttendanceStatus.LEAVE, 0)
+    total_marked_today = sum(status_counts.values())
     effective_present_today = present_today + late_today
     attendance_percentage_today = (
         round((effective_present_today / total_marked_today) * 100, 2) if total_marked_today > 0 else 0.0
