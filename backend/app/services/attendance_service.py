@@ -29,11 +29,21 @@ from app.utils.phone import build_whatsapp_urls
 
 def render_leave_message(student: Student, date_val: date, academy_name: str) -> str:
     """Render bilingual English and Urdu approved leave acknowledgment message."""
-    from app.utils.urdu_transliteration import get_guardian_urdu_name, get_student_urdu_name
+    from app.utils.urdu_transliteration import (
+        get_academy_urdu_name,
+        get_guardian_urdu_name,
+        get_student_urdu_name,
+    )
 
     guardian_label = student.guardian_name or "Guardian"
     student_name_ur = get_student_urdu_name(student)
     guardian_label_ur = get_guardian_urdu_name(student)
+    guard_line_ur = (
+        "محترم والدین / سرپرست،"
+        if guardian_label_ur == "محترم والدین / سرپرست"
+        else f"محترم والدین / سرپرست (*{guardian_label_ur}*)،"
+    )
+    academy_ur = get_academy_urdu_name(academy_name)
 
     return (
         f"*LEAVE ACKNOWLEDGMENT*\n*Assalam-o-Alaikum*\n\n"
@@ -44,20 +54,30 @@ def render_leave_message(student: Student, date_val: date, academy_name: str) ->
         f"*{academy_name}*\n\n"
         f"-----------------------------------\n\n"
         f"*رخصت کی تصدیق*\n*السلام علیکم*\n\n"
-        f"محترم والدین / سرپرست (*{guardian_label_ur}*)،\n\n"
-        f"آپ کو مطلع کیا جاتا ہے کہ آپ کے بچے *{student_name_ur}* کی مورخہ *{date_val.isoformat()}* کی *رخصت (Leave)* اکیڈمی ریکارڈ میں درج کر لی گئی ہے۔\n\n"
+        f"{guard_line_ur}\n\n"
+        f"آپ کو مطلع کیا جاتا ہے کہ آپ کے بچے / بچی *{student_name_ur}* کی مورخہ *{date_val.isoformat()}* کی *رخصت (Leave)* اکیڈمی ریکارڈ میں درج کر لی گئی ہے۔\n\n"
         f"والسلام،\n"
-        f"*{academy_name}*"
+        f"*{academy_ur}*"
     )
 
 
 def render_late_message(student: Student, date_val: date, academy_name: str) -> str:
     """Render bilingual English and Urdu late arrival notice message."""
-    from app.utils.urdu_transliteration import get_guardian_urdu_name, get_student_urdu_name
+    from app.utils.urdu_transliteration import (
+        get_academy_urdu_name,
+        get_guardian_urdu_name,
+        get_student_urdu_name,
+    )
 
     guardian_label = student.guardian_name or "Guardian"
     student_name_ur = get_student_urdu_name(student)
     guardian_label_ur = get_guardian_urdu_name(student)
+    guard_line_ur = (
+        "محترم والدین / سرپرست،"
+        if guardian_label_ur == "محترم والدین / سرپرست"
+        else f"محترم والدین / سرپرست (*{guardian_label_ur}*)،"
+    )
+    academy_ur = get_academy_urdu_name(academy_name)
 
     return (
         f"*LATE ARRIVAL NOTICE*\n*Assalam-o-Alaikum*\n\n"
@@ -68,11 +88,11 @@ def render_late_message(student: Student, date_val: date, academy_name: str) -> 
         f"*{academy_name}*\n\n"
         f"-----------------------------------\n\n"
         f"*تاخیر سے آمد کی اطلاع*\n*السلام علیکم*\n\n"
-        f"محترم والدین / سرپرست (*{guardian_label_ur}*)،\n\n"
-        f"آپ کو مطلع کیا جاتا ہے کہ آپ کا بچہ *{student_name_ur}* مورخہ *{date_val.isoformat()}* کو اکیڈمی میں *تاخیر (Late)* سے پہنچا ہے۔\n\n"
+        f"{guard_line_ur}\n\n"
+        f"آپ کو مطلع کیا جاتا ہے کہ آپ کا بچہ / بچی *{student_name_ur}* مورخہ *{date_val.isoformat()}* کو اکیڈمی میں *تاخیر (Late)* سے پہنچا/پہنچی ہے۔\n\n"
         f"بہتر تعلیمی نظم و ضبط کے لیے وقت کی پابندی بے حد ضروری ہے۔ براہِ کرم آئندہ بروقت آمد کو یقینی بنائیں۔\n\n"
         f"والسلام،\n"
-        f"*{academy_name}*"
+        f"*{academy_ur}*"
     )
 
 

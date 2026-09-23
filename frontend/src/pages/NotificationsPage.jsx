@@ -5,13 +5,14 @@ import {
   markNotificationSent,
   dispatchPendingNotifications,
   deletePendingNotifications,
+  deleteAllNotifications,
   deleteNotification,
   listTemplates,
   updateTemplate,
 } from '../api/notifications'
 import { normalizeError } from '../api/client'
 import { useAuth } from '../context/AuthContext'
-import { openWhatsApp } from '../utils/whatsapp'
+import { openWhatsApp, getStoredWhatsAppTarget } from '../utils/whatsapp'
 import PageHeader from '../components/PageHeader'
 import Spinner from '../components/Spinner'
 import ErrorAlert from '../components/ErrorAlert'
@@ -91,7 +92,8 @@ export default function NotificationsPage() {
   }
 
   async function handleSendWhatsApp(job) {
-    openWhatsApp(job.recipient, job.message)
+    const target = getStoredWhatsAppTarget() || 'desktop'
+    openWhatsApp(job.recipient, job.message, target)
     try {
       await markNotificationSent(job.id)
       loadJobs()
@@ -104,7 +106,11 @@ export default function NotificationsPage() {
   const [dispatchSuccess, setDispatchSuccess] = useState('')
   const [confirmDeletePendingOpen, setConfirmDeletePendingOpen] = useState(false)
   const [deletingPending, setDeletingPending] = useState(false)
+  const [confirmDeleteAllOpen, setConfirmDeleteAllOpen] = useState(false)
+  const [deletingAll, setDeletingAll] = useState(false)
   const [deleteJobConfirm, setDeleteJobConfirm] = useState(null)
+
+  const pendingCount = (jobs || []).filter((j) => j.status === 'PENDING' || j.status === 'RETRYING').length
 
   async function handleDispatchPending() {
     setDispatching(true)
@@ -135,6 +141,24 @@ export default function NotificationsPage() {
       setError(normalizeError(err).message)
     } finally {
       setDeletingPending(false)
+    }
+  }
+
+  async function handleDeleteAllNotifications() {
+    setDeletingAll(true)
+    setError(null)
+    try {
+      const res = await deleteAllNotifications('ALL')
+      setConfirmDeleteAllOpen(false)
+      setConfirmDeletePendingOpen(false)
+      setDispatchSuccess(`Successfully cleared all ${res.deleted} notification(s).`)
+      setPage(1)
+      loadJobs()
+      setTimeout(() => setDispatchSuccess(''), 4000)
+    } catch (err) {
+      setError(normalizeError(err).message)
+    } finally {
+      setDeletingAll(false)
     }
   }
 
@@ -218,17 +242,27 @@ export default function NotificationsPage() {
                 <button
                   type="button"
                   onClick={() => setConfirmDeletePendingOpen(true)}
-                  disabled={deletingPending || dispatching}
-                  className="bg-red-600 hover:bg-red-700 disabled:opacity-50 text-white text-xs font-semibold px-3 py-2 rounded-md flex items-center gap-1.5 shadow-xs transition-colors cursor-pointer"
+                  disabled={deletingPending || deletingAll || dispatching}
+                  className="bg-amber-600 hover:bg-amber-700 disabled:opacity-50 text-white text-xs font-semibold px-3 py-2 rounded-md flex items-center gap-1.5 shadow-xs transition-colors cursor-pointer"
                   title="Delete all pending and retrying notification jobs"
                 >
+                  <i className="fas fa-trash-clock"></i>
+                  {deletingPending ? 'Deleting...' : 'Delete Pending'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setConfirmDeleteAllOpen(true)}
+                  disabled={deletingAll || deletingPending || dispatching}
+                  className="bg-red-600 hover:bg-red-700 disabled:opacity-50 text-white text-xs font-semibold px-3 py-2 rounded-md flex items-center gap-1.5 shadow-xs transition-colors cursor-pointer"
+                  title="Clear all notification history and jobs"
+                >
                   <i className="fas fa-trash-can"></i>
-                  {deletingPending ? 'Deleting...' : 'Delete All Pending'}
+                  {deletingAll ? 'Clearing...' : 'Clear All History'}
                 </button>
                 <button
                   type="button"
                   onClick={handleDispatchPending}
-                  disabled={dispatching || deletingPending}
+                  disabled={dispatching || deletingPending || deletingAll}
                   className="bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white text-xs font-semibold px-3.5 py-2 rounded-md flex items-center gap-1.5 shadow-xs transition-colors cursor-pointer"
                   title="Process all pending notification jobs"
                 >
@@ -412,15 +446,30 @@ export default function NotificationsPage() {
         )}
       </Modal>
 
-      {/* Confirm Delete All Pending Modal */}
+      {/* Confirm Delete Pending Modal */}
       <ConfirmDialog
         open={confirmDeletePendingOpen}
-        title="Delete All Pending Notifications"
-        message="Are you sure you want to delete all pending notification jobs? This will permanently remove all queued messages waiting to be sent. This action cannot be undone."
-        confirmLabel="Delete All Pending"
+        title={pendingCount === 0 ? 'No Pending Notifications' : 'Delete Pending Notifications'}
+        message={
+          pendingCount === 0
+            ? `There are currently 0 pending or queued notification jobs.\n\nAll ${total || jobs.length} existing records in history are already SENT or completed.\n\nWould you like to clear all notification history instead?`
+            : `Are you sure you want to delete ${pendingCount} pending notification job(s)? This will remove queued messages waiting to be sent.`
+        }
+        confirmLabel={pendingCount === 0 ? 'Clear All History' : 'Delete Pending'}
         danger={true}
-        onConfirm={handleDeleteAllPending}
+        onConfirm={pendingCount === 0 ? handleDeleteAllNotifications : handleDeleteAllPending}
         onCancel={() => setConfirmDeletePendingOpen(false)}
+      />
+
+      {/* Confirm Clear All Notifications Modal */}
+      <ConfirmDialog
+        open={confirmDeleteAllOpen}
+        title="Clear All Notifications History"
+        message={`Are you sure you want to permanently delete all notification records (${total || jobs.length} notification(s))? This action will completely clear your notification history and cannot be undone.`}
+        confirmLabel="Clear All Notifications"
+        danger={true}
+        onConfirm={handleDeleteAllNotifications}
+        onCancel={() => setConfirmDeleteAllOpen(false)}
       />
 
       {/* Confirm Delete Single Notification Modal */}

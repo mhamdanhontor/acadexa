@@ -34,6 +34,20 @@ async def lifespan(app: FastAPI):
     except Exception as exc:
         logger.debug("Schema migration note: %s", exc)
 
+    try:
+        from app.db.session import SessionLocal
+        from app.models.notification import NotificationTemplate
+        from app.services.notification_service import DEFAULT_TEMPLATES
+        with SessionLocal() as db:
+            for notif_type, body in DEFAULT_TEMPLATES.items():
+                tpl = db.query(NotificationTemplate).filter(NotificationTemplate.type == notif_type).first()
+                if tpl:
+                    if "*Honor Knowledge Academy*" in tpl.body and "---" in tpl.body:
+                        tpl.body = body
+                        db.commit()
+    except Exception as exc:
+        logger.debug("Template sync note: %s", exc)
+
     scheduler.add_job(
         process_pending_notifications,
         "interval",
@@ -50,7 +64,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title=settings.APP_NAME,
-    version="1.0.5",
+    version="1.0.6",
     docs_url="/docs" if settings.ENABLE_DOCS else None,
     redoc_url="/redoc" if settings.ENABLE_DOCS else None,
     lifespan=lifespan,

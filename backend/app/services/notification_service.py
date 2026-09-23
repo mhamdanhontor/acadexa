@@ -30,7 +30,7 @@ DEFAULT_TEMPLATES: dict[NotificationType, str] = {
         "آپ کو مؤدبانہ مطلع کیا جاتا ہے کہ آپ کا بچہ / بچی *{student_name_ur}* مورخہ *{date}* کو اکیڈمی سے *غیر حاضر* تھا۔/تھی۔\n\n"
         "کسی بھی معلومات یا وضاحت کے لیے برائے مہربانی اکیڈمی انتظامیہ سے رابطہ فرمائیں۔\n\n"
         "والسلام،\n"
-        "*{academy_name}*"
+        "*آنر نالج اکیڈمی*"
     ),
     NotificationType.MARKS: (
         "*TEST RESULT ANNOUNCEMENT*\n*Assalam-o-Alaikum*\n\n"
@@ -51,7 +51,7 @@ DEFAULT_TEMPLATES: dict[NotificationType, str] = {
         "🎯 *حاصل کردہ نمبر:* {obtained_marks}/{total_marks} ({percentage}%)\n\n"
         "اپنے بچے کی تعلیمی لگن اور محنت کی حوصلہ افزائی جاری رکھیں۔\n\n"
         "والسلام،\n"
-        "*{academy_name}*"
+        "*آنر نالج اکیڈمی*"
     ),
     NotificationType.MONTHLY_REPORT: (
         "*MONTHLY PROGRESS REPORT*\n*Assalam-o-Alaikum*\n\n"
@@ -66,7 +66,7 @@ DEFAULT_TEMPLATES: dict[NotificationType, str] = {
         "{student_name_ur} ({class_name} - {batch_name}) کی ماہانہ تعلیمی و حاضری رپورٹ برائے *{date}* تیار ہے۔\n\n"
         "برائے مہربانی اپنے بچے کی تعلیمی و حاضری کارکردگی کا جائزہ لیں۔\n\n"
         "والسلام،\n"
-        "*{academy_name}*"
+        "*آنر نالج اکیڈمی*"
     ),
     NotificationType.FEE_RECEIPT: (
         "*FEE PAYMENT RECEIPT*\n*Assalam-o-Alaikum*\n\n"
@@ -89,13 +89,18 @@ DEFAULT_TEMPLATES: dict[NotificationType, str] = {
         "🗓 *تاریخِ ادائیگی:* {payment_date}\n\n"
         "بروقت ادائیگی اور تعاون کا شکریہ!\n\n"
         "والسلام،\n"
-        "*{academy_name}*"
+        "*آنر نالج اکیڈمی*"
     ),
 }
 
 
 def render_template(body: str, variables: dict[str, Any]) -> str:
-    from app.utils.urdu_transliteration import is_urdu_text, transliterate_name_to_urdu
+    from app.utils.urdu_transliteration import (
+        get_academy_urdu_name,
+        get_subject_urdu_name,
+        is_urdu_text,
+        transliterate_name_to_urdu,
+    )
 
     # Ensure Urdu name variables exist
     student_name = str(variables.get("student_name", ""))
@@ -103,6 +108,8 @@ def render_template(body: str, variables: dict[str, Any]) -> str:
 
     student_name_ur = variables.get("student_name_ur") or transliterate_name_to_urdu(student_name)
     guardian_name_ur = variables.get("guardian_name_ur") or transliterate_name_to_urdu(guardian_name)
+    if guardian_name_ur in ("نیلل", "نل", "کوئی نہیں") or not guardian_name.strip() or guardian_name.strip().lower() in ("nill", "nil", "none", "n/a", "na", "-"):
+        guardian_name_ur = "محترم والدین / سرپرست"
 
     enriched_vars = dict(variables)
     enriched_vars["student_name_ur"] = student_name_ur
@@ -125,15 +132,21 @@ def render_template(body: str, variables: dict[str, Any]) -> str:
                     )
                 )
             else:
-                # Urdu section: student_name -> Urdu name, guardian_name -> Urdu name
+                # Urdu section: student_name -> Urdu name, guardian_name -> Urdu name, academy -> Urdu, subject -> Urdu
                 urdu_vars = dict(enriched_vars)
                 urdu_vars["student_name"] = student_name_ur
                 urdu_vars["guardian_name"] = guardian_name_ur
-                rendered_parts.append(
-                    TEMPLATE_VAR_PATTERN.sub(
-                        lambda m: str(urdu_vars.get(m.group(1), f"{{{m.group(1)}}}")) , part
-                    )
+                urdu_vars["academy_name"] = get_academy_urdu_name(enriched_vars.get("academy_name"))
+                if "subject" in enriched_vars:
+                    urdu_vars["subject"] = get_subject_urdu_name(enriched_vars.get("subject"))
+
+                part_rendered = TEMPLATE_VAR_PATTERN.sub(
+                    lambda m: str(urdu_vars.get(m.group(1), f"{{{m.group(1)}}}")) , part
                 )
+                # Clean up redundant parenthetical guardian titles if it became "محترم والدین / سرپرست (*محترم والدین / سرپرست*)"
+                part_rendered = part_rendered.replace("(*محترم والدین / سرپرست*)", "")
+                part_rendered = part_rendered.replace("(*محترم والدین / سرپرست *)", "")
+                rendered_parts.append(part_rendered)
         return "".join(rendered_parts)
 
     # Pure Urdu body check
@@ -141,9 +154,14 @@ def render_template(body: str, variables: dict[str, Any]) -> str:
         urdu_vars = dict(enriched_vars)
         urdu_vars["student_name"] = student_name_ur
         urdu_vars["guardian_name"] = guardian_name_ur
-        return TEMPLATE_VAR_PATTERN.sub(
+        urdu_vars["academy_name"] = get_academy_urdu_name(enriched_vars.get("academy_name"))
+        if "subject" in enriched_vars:
+            urdu_vars["subject"] = get_subject_urdu_name(enriched_vars.get("subject"))
+        pure_rendered = TEMPLATE_VAR_PATTERN.sub(
             lambda m: str(urdu_vars.get(m.group(1), f"{{{m.group(1)}}}")) , body
         )
+        pure_rendered = pure_rendered.replace("(*محترم والدین / سرپرست*)", "")
+        return pure_rendered
 
     # Default single section
     return TEMPLATE_VAR_PATTERN.sub(

@@ -107,3 +107,60 @@ def test_bilingual_template_rendering_auto_replaces_even_with_english_placeholde
     # In Urdu section, it should automatically use Urdu names
     assert "طارق خان" in urdu_part
     assert "بلال خان" in urdu_part
+
+
+def test_real_academy_student_and_guardian_names():
+    assert transliterate_name_to_urdu("Ibrahim") == "ابراہیم"
+    assert transliterate_name_to_urdu("Mustafa Bhatti") == "مصطفیٰ بھٹی"
+    assert transliterate_name_to_urdu("Muhammad Mudasir") == "محمد مدثر"
+    assert transliterate_name_to_urdu("Zil-e-Hassnain Kazmi") == "ظلِ حسنین کاظمی"
+    assert transliterate_name_to_urdu("M shahzab") == "محمد شاہ زیب"
+    assert transliterate_name_to_urdu("Abdul Hanan") == "عبدال حنان"
+    assert transliterate_name_to_urdu("Abdul basit jr") == "عبدال باسط جونیئر"
+    assert transliterate_name_to_urdu("Qaleem Ullah") == "کلیم اللہ"
+
+
+def test_guardian_placeholder_fallbacks():
+    s_nill = MockStudent(name="Ibrahim", guardian_name="Nill")
+    assert get_guardian_urdu_name(s_nill) == "محترم والدین / سرپرست"
+
+    s_none = MockStudent(name="Mustafa", guardian_name="None")
+    assert get_guardian_urdu_name(s_none) == "محترم والدین / سرپرست"
+
+    s_empty = MockStudent(name="Hamza", guardian_name="")
+    assert get_guardian_urdu_name(s_empty) == "محترم والدین / سرپرست"
+
+    s_dash = MockStudent(name="Hamza", guardian_name="-")
+    assert get_guardian_urdu_name(s_dash) == "محترم والدین / سرپرست"
+
+
+def test_bilingual_template_with_subject_and_academy_urdu():
+    template = (
+        "Dear {guardian_name},\n"
+        "Subject: {subject}\n"
+        "*{academy_name}*\n\n"
+        "---\n\n"
+        "محترم والدین (*{guardian_name}*)،\n"
+        "مضمون: {subject}\n"
+        "*{academy_name}*"
+    )
+    ctx = {
+        "student_name": "Mustafa Bhatti",
+        "guardian_name": "Nill",
+        "subject": "Physics",
+        "academy_name": "Honor Knowledge Academy",
+    }
+    rendered = render_template(template, ctx)
+    lines = rendered.split("---")
+    eng = lines[0]
+    ur = lines[1]
+
+    assert "Dear Nill" in eng
+    assert "*Honor Knowledge Academy*" in eng
+    assert "Physics" in eng
+
+    assert "آنر نالج اکیڈمی" in ur
+    assert "طبیعیات (Physics)" in ur
+    assert "محترم والدین" in ur
+    assert "نیلل" not in ur
+

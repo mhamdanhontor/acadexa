@@ -76,3 +76,63 @@ def test_delete_single_notification(client, auth_headers, db_session):
 
     # Verify 404 on retry or deletion
     assert client.delete(f"/api/v1/notifications/{job.id}", headers=auth_headers).status_code == 404
+
+
+def test_bulk_delete_all_notifications(client, auth_headers, db_session):
+    c_id = client.post("/api/v1/classes", json={"name": "BulkDelClass"}, headers=auth_headers).json()["id"]
+    b_id = client.post("/api/v1/batches", json={"name": "BulkDelBatch"}, headers=auth_headers).json()["id"]
+    sid = client.post(
+        "/api/v1/students",
+        json={"student_code": "BULKDEL01", "name": "Bulk Del Student", "whatsapp_number": "923001234569", "class_id": c_id, "batch_id": b_id},
+        headers=auth_headers,
+    ).json()["id"]
+
+    for st in [NotificationStatus.PENDING, NotificationStatus.SENT, NotificationStatus.FAILED]:
+        db_session.add(
+            NotificationJob(
+                student_id=sid,
+                type=NotificationType.ABSENCE,
+                recipient="923001234569",
+                message=f"Msg {st.value}",
+                status=st,
+            )
+        )
+    db_session.commit()
+
+    # Bulk delete ALL
+    del_resp = client.delete("/api/v1/notifications?status=ALL", headers=auth_headers)
+    assert del_resp.status_code == 200
+    assert del_resp.json()["deleted"] >= 3
+
+    # Check remaining: 0 jobs
+    list_resp = client.get("/api/v1/notifications", headers=auth_headers)
+    assert len(list_resp.json()["items"]) == 0
+
+
+def test_bulk_delete_notifications_by_status(client, auth_headers, db_session):
+    c_id = client.post("/api/v1/classes", json={"name": "FilterDelClass"}, headers=auth_headers).json()["id"]
+    b_id = client.post("/api/v1/batches", json={"name": "FilterDelBatch"}, headers=auth_headers).json()["id"]
+    sid = client.post(
+        "/api/v1/students",
+        json={"student_code": "FLTDEL01", "name": "Filter Del", "whatsapp_number": "923001234570", "class_id": c_id, "batch_id": b_id},
+        headers=auth_headers,
+    ).json()["id"]
+
+    db_session.add_all([
+        NotificationJob(student_id=sid, type=NotificationType.ABSENCE, recipient="923001234570", message="Sent 1", status=NotificationStatus.SENT),
+        NotificationJob(student_id=sid, type=NotificationType.ABSENCE, recipient="923001234570", message="Sent 2", status=NotificationStatus.SENT),
+        NotificationJob(student_id=sid, type=NotificationType.ABSENCE, recipient="923001234570", message="Pending 1", status=NotificationStatus.PENDING),
+    ])
+    db_session.commit()
+
+    # Delete only SENT
+    del_resp = client.delete("/api/v1/notifications?status=SENT", headers=auth_headers)
+    assert del_resp.status_code == 200
+    assert del_resp.json()["deleted"] == 2
+
+    # Check remaining: only PENDING remains
+    list_resp = client.get("/api/v1/notifications", headers=auth_headers)
+    items = list_resp.json()["items"]
+    assert len(items) == 1
+    assert items[0]["status"] == "PENDING"
+

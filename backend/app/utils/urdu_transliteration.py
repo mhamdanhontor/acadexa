@@ -12,38 +12,98 @@ URDU_CHAR_PATTERN = re.compile(r"[\u0600-\u06FF\u0750-\u077F]")
 
 # Common Pakistani & Islamic given names and surnames dictionary
 NAME_DICTIONARY: dict[str, str] = {
-    # Existing database names
+    # Real academy student & guardian names
+    "mahad": "ماہد",
+    "mubeen": "مبین",
     "hamdan": "حمدان",
     "zameer": "ضمیر",
-    "shaban": "شعبان",
-    "akhar": "اختر",
-    "akhtar": "اختر",
-    "hamza": "حمزہ",
-    "safdar": "صفدر",
-    "azhar": "اظہر",
-    "asghar": "اصغر",
-    "qureshi": "قریشی",
-    "zarman": "زرمن",
-    "nadeem": "ندیم",
-    "qaiser": "قیصر",
+    "fahad": "فہد",
+    "aqeel": "عقیل",
+    "zafar": "ظفر",
+    "subhan": "سبحان",
+    "farooq": "فاروق",
+    "umar": "عمر",
+    "mudasir": "مدثر",
+    "mudassir": "مدثر",
+    "muddasir": "مدثر",
+    "nasir": "ناصر",
+    "aslam": "اسلم",
+    "abubaker": "ابوبکر",
+    "abubakar": "ابوبکر",
+    "naveed": "نوید",
+    "ahmad": "احمد",
+    "ahmed": "احمد",
     "muslim": "مسلم",
     "ali": "علی",
     "saif": "سیف",
-    "ullah": "اللہ",
-    "saifullah": "سیف اللہ",
-    "sayed": "سید",
-    "syed": "سید",
-    "kazmi": "کاظمی",
-    "ruh": "روح",
-    "hasnain": "حسنین",
-    "hassnain": "حسنین",
-    "ruh-ul-hasnain": "روح الحسنین",
+    "zarman": "زرمن",
+    "nadeem": "ندیم",
+    "qaiser": "قیصر",
+    "abdullah": "عبداللہ",
+    "sheheryar": "شہریار",
     "sheryar": "شہریار",
-    "shehryar": "شہریار",
     "haider": "حیدر",
     "sher": "شیر",
-    "abbas": "عباس",
+    "azhar": "اظہر",
+    "qureshi": "قریشی",
+    "asghar": "اصغر",
+    "mustafa": "مصطفیٰ",
+    "bhatti": "بھٹی",
+    "razi": "رضی",
+    "ullah": "اللہ",
+    "qaleem": "کلیم",
+    "wazir": "وزیر",
+    "maaz": "معاذ",
+    "ms": "مس",
+    "gulfaraz": "گلفراز",
+    "raheem": "رحیم",
+    "naeem": "نعیم",
+    "ayan": "ایان",
+    "shahbaz": "شہباز",
+    "ibrahim": "ابراہیم",
+    "kazmi": "کاظمی",
+    "kazmni": "کاظمی",
+    "sajid": "ساجد",
+    "hamza": "حمزہ",
+    "safdar": "صفدر",
+    "hanan": "حنان",
+    "talib": "طالب",
+    "basit": "باسط",
+    "hafiz": "حافظ",
+    "raza": "رضا",
+    "toqueer": "توقیر",
+    "tauqeer": "توقیر",
+    "shahzab": "شاہ زیب",
+    "shahzaib": "شاہ زیب",
+    "hafeez": "حفیظ",
+    "shahzain": "شاہ زین",
+    "aurangzaib": "اورنگزیب",
+    "aurangzeb": "اورنگزیب",
+    "ijaaz": "اعجاز",
+    "ijaz": "اعجاز",
+    "ejaz": "اعجاز",
+    "hammad": "حماد",
+    "aqib": "عاقب",
+    "atif": "عاطف",
+
+    # Titles, Prefixes & Hyphenated names
+    "m": "محمد",
+    "jr": "جونیئر",
+    "rooh": "روح",
+    "ruh": "روح",
+    "rooh-ul-hassnain": "روح الحسنین",
+    "ruh-ul-hasnain": "روح الحسنین",
     "zil-e-hassnain": "ظلِ حسنین",
+    "saifullah": "سیف اللہ",
+    "shaban": "شعبان",
+    "akhtar": "اختر",
+    "akhar": "اختر",
+    "sayed": "سید",
+    "syed": "سید",
+    "sayyid": "سید",
+    "hasnain": "حسنین",
+    "hassnain": "حسنین",
+    "abbas": "عباس",
     "zain": "زین",
     "fatima": "فاطمہ",
     "noor": "نور",
@@ -54,31 +114,23 @@ NAME_DICTIONARY: dict[str, str] = {
     "ayesha": "عائشہ",
     "malik": "ملک",
 
-    # Common Pakistani names
+    # Common Pakistani & Islamic names
     "muhammad": "محمد",
     "mohammad": "محمد",
-    "ahmad": "احمد",
-    "ahmed": "احمد",
     "usman": "عثمان",
     "osman": "عثمان",
-    "umar": "عمر",
     "omer": "عمر",
-    "abubakar": "ابوبکر",
     "hassan": "حسن",
     "hussain": "حسین",
-    "abdullah": "عبداللہ",
     "abdul": "عبدال",
     "rehman": "رحمٰن",
     "rahman": "رحمٰن",
-    "raheem": "رحیم",
     "kareem": "کریم",
     "rashid": "راشد",
     "shahid": "شاہد",
     "zahid": "زاہد",
-    "sajid": "ساجد",
     "majid": "ماجد",
     "kashif": "کاشف",
-    "atif": "عاطف",
     "asif": "آصف",
     "waqas": "وقاص",
     "faisal": "فیصل",
@@ -96,19 +148,16 @@ NAME_DICTIONARY: dict[str, str] = {
     "javeed": "جاوید",
     "javed": "جاوید",
     "naved": "نوید",
-    "naeem": "نعیم",
     "waseem": "وسیم",
     "saleem": "سلیم",
     "khalid": "خالد",
     "tahir": "طاہر",
-    "nasir": "ناصر",
     "munir": "منیر",
     "tanveer": "تنویر",
     "tanvir": "تنویر",
     "iqbal": "اقبال",
     "anwar": "انور",
     "akram": "اکرم",
-    "aslam": "اسلم",
     "amjad": "امجد",
     "arshad": "ارشد",
     "rashida": "راشدہ",
@@ -118,7 +167,6 @@ NAME_DICTIONARY: dict[str, str] = {
     "bibi": "بی بی",
     "amna": "آمنہ",
     "khadija": "خدیجہ",
-    "ayesha": "عائشہ",
     "sadia": "سعدیہ",
     "saba": "صبا",
     "sana": "ثناء",
@@ -148,10 +196,7 @@ NAME_DICTIONARY: dict[str, str] = {
     "nida": "ندا",
     "huma": "ہما",
     "mahnoor": "ماہ نور",
-    "shahzaib": "شاہ زیب",
-    "aurangzeb": "اورنگزیب",
     "jehangir": "جہانگیر",
-    "shahid": "شاہد",
     "khurram": "خرم",
     "danish": "دانش",
     "hamid": "حامد",
@@ -162,16 +207,13 @@ NAME_DICTIONARY: dict[str, str] = {
     "usama": "اسامہ",
     "osama": "اسامہ",
     "saad": "سعد",
-    "subhan": "سبحان",
     "rehan": "ریحان",
-    "farooq": "فاروق",
     "siddique": "صدیق",
     "chaudhary": "چوہدری",
     "choudhry": "چوہدری",
     "rana": "رانا",
     "raja": "راجہ",
     "butt": "بٹ",
-    "bhatti": "بھٹی",
     "cheema": "چیمہ",
     "bajwa": "باجوہ",
     "warraich": "وڑائچ",
@@ -188,8 +230,46 @@ NAME_DICTIONARY: dict[str, str] = {
     "baig": "بیگ",
     "mughal": "مغل",
     "shah": "شاہ",
-    "sayyid": "سید",
 }
+
+# Subject English to Urdu map
+SUBJECT_URDU_MAP: dict[str, str] = {
+    "mathematics": "ریاضی",
+    "maths": "ریاضی",
+    "math": "ریاضی",
+    "physics": "طبیعیات (Physics)",
+    "chemistry": "کیمسٹری (Chemistry)",
+    "biology": "حیاتیات (Biology)",
+    "computer": "کمپیوٹر سائنس",
+    "computer science": "کمپیوٹر سائنس",
+    "english": "انگریزی (English)",
+    "urdu": "اردو",
+    "islamiat": "اسلامیات",
+    "islamic studies": "اسلامیات",
+    "pak studies": "مطالعہ پاکستان",
+    "pakistan studies": "مطالعہ پاکستان",
+    "general science": "جنرل سائنس",
+    "science": "سائنس",
+    "economics": "معاشیات",
+    "accounting": "اکاؤنٹنگ",
+    "commerce": "کامرس",
+    "tarjuma-tul-quran": "ترجمۃ القرآن",
+    "quran": "قرآن پاک",
+}
+
+
+def get_subject_urdu_name(subject: Optional[str]) -> str:
+    """Return authentic Urdu subject name."""
+    if not subject:
+        return "عمومی ٹیسٹ"
+    clean = subject.strip().lower()
+    return SUBJECT_URDU_MAP.get(clean, subject)
+
+
+def get_academy_urdu_name(academy_name: Optional[str] = None) -> str:
+    """Return authentic Urdu academy name."""
+    return "آنر نالج اکیڈمی"
+
 
 # Phonetic character mapping for words not in the dictionary
 PHONETIC_PAIRS = [
@@ -247,7 +327,7 @@ def is_urdu_text(text: Optional[str]) -> bool:
 
 def transliterate_word_to_urdu(word: str) -> str:
     """Transliterate a single English name word to Urdu."""
-    cleaned = word.strip().lower()
+    cleaned = word.strip().lower().rstrip(".,")
     if not cleaned:
         return ""
 
@@ -313,10 +393,19 @@ def get_student_urdu_name(student: Optional[object], fallback_name: Optional[str
 
 def get_guardian_urdu_name(student: Optional[object], fallback_guardian: Optional[str] = None) -> str:
     """Extract or derive the Urdu name for a student's guardian."""
+    eng_guard = None
     if student is not None:
         guard_ur = getattr(student, "guardian_name_ur", None)
         if guard_ur and guard_ur.strip():
             return guard_ur.strip()
-        eng_guard = getattr(student, "guardian_name", None) or fallback_guardian or "والد / سرپرست"
-        return transliterate_name_to_urdu(eng_guard)
-    return transliterate_name_to_urdu(fallback_guardian or "والد / سرپرست")
+        eng_guard = getattr(student, "guardian_name", None)
+
+    eng_guard = (eng_guard or fallback_guardian or "").strip()
+    clean = eng_guard.lower()
+
+    # Common placeholders when guardian is not specified
+    if not clean or clean in ("nill", "nil", "none", "n/a", "na", "-", "--", "parent", "guardian", "father"):
+        return "محترم والدین / سرپرست"
+
+    return transliterate_name_to_urdu(eng_guard)
+

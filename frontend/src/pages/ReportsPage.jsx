@@ -236,19 +236,38 @@ export default function ReportsPage() {
 
     let attSummary = ''
     let testSummary = ''
+    let attSummaryUr = ''
+    let testSummaryUr = ''
+    let studentUr = report.student_name || ''
+    let guardianUr = report.guardian_name || ''
+
     try {
       if (report.data_json) {
         const d = typeof report.data_json === 'string' ? JSON.parse(report.data_json) : report.data_json
+        if (d.student_name_ur) studentUr = d.student_name_ur
+        if (d.guardian_name_ur) guardianUr = d.guardian_name_ur
+
         if (d.attendance) {
           attSummary = `\n📊 *Monthly Attendance:* *${d.attendance.percentage}%* (${d.attendance.present || 0} Present, ${d.attendance.late || 0} Late, ${d.attendance.absent || 0} Absent)`
+          attSummaryUr = `\n📊 *ماہانہ حاضری:* *${d.attendance.percentage}%* (${d.attendance.present || 0} حاضر، ${d.attendance.late || 0} تاخیر، ${d.attendance.absent || 0} غیر حاضر)`
         }
         if (d.academics && d.academics.total_tests > 0) {
           testSummary = `\n📝 *Tests & Marks:* ${d.academics.total_tests} Tests Conducted | Avg Score: *${d.academics.overall_percentage}%* | Grade: *${d.academics.overall_grade}*`
+          testSummaryUr = `\n📝 *امتحانی نتائج:* ${d.academics.total_tests} ٹیسٹ | اوسط: *${d.academics.overall_percentage}%* | گریڈ: *${d.academics.overall_grade}*`
         }
       }
     } catch (e) {
       console.warn('Failed to parse report data_json for WhatsApp msg:', e)
     }
+
+    if (!guardianUr || guardianUr.trim().toLowerCase() === 'nill' || guardianUr === 'نیلل' || guardianUr.trim().toLowerCase() === 'none') {
+      guardianUr = 'محترم والدین / سرپرست'
+    }
+
+    const guardLineUr =
+      guardianUr === 'محترم والدین / سرپرست'
+        ? 'محترم والدین / سرپرست،'
+        : `محترم والدین / سرپرست (*${guardianUr}*)،`
 
     const msg =
       `*MONTHLY PROGRESS REPORT*\n` +
@@ -258,7 +277,19 @@ export default function ReportsPage() {
       attSummary +
       testSummary +
       `\n\nYour child's official monthly academic and attendance report has been generated. The detailed PDF report is downloaded and ready for review.\n\n` +
-      `*Honor Knowledge Academy*`
+      `*Honor Knowledge Academy*\n\n` +
+      `-----------------------------------\n\n` +
+      `*ماہانہ تعلیمی و حاضری رپورٹ*\n*السلام علیکم*\n\n` +
+      `${guardLineUr}\n\n` +
+      `طالب علم: *${studentUr}* (${report.student_code || `#${report.student_id}`})\n` +
+      `دورانیہ: *${report.period_start} تا ${report.period_end}*\n` +
+      `کلاس: *${report.class_name || className(report.class_id)}* | بیج: *${report.batch_name || batchName(report.batch_id)}*\n` +
+      attSummaryUr +
+      testSummaryUr +
+      `\n\nآپ کے بچے کی سرکاری ماہانہ تعلیمی و حاضری رپورٹ تیار کر لی گئی ہے۔ تفصیلی پی ڈی ایف رپورٹ ڈاؤن لوڈ ہو چکی ہے۔\n\n` +
+      `والسلام،\n` +
+      `*آنر نالج اکیڈمی*`
+
     openWhatsApp(report.whatsapp_number, msg, target)
   }
 

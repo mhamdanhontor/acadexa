@@ -134,6 +134,43 @@ def dispatch_pending_notifications(
     return {"processed": processed, "mode": settings.WHATSAPP_PROVIDER}
 
 
+@router.delete("/notifications")
+def delete_notifications_bulk(
+    status: Optional[str] = Query(None, description="Filter: ALL, SENT, PENDING, FAILED, RETRYING"),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_roles(RoleName.SUPER_ADMIN, RoleName.ADMIN)),
+):
+    """Delete notification jobs in bulk, optionally filtered by status (default: ALL)."""
+    query = db.query(NotificationJob)
+    if status and status.upper() != "ALL":
+        st_upper = status.upper()
+        if st_upper == "PENDING":
+            query = query.filter(NotificationJob.status.in_([NotificationStatus.PENDING, NotificationStatus.RETRYING]))
+        else:
+            try:
+                enum_st = NotificationStatus(st_upper)
+                query = query.filter(NotificationJob.status == enum_st)
+            except ValueError:
+                pass
+
+    jobs_to_delete = query.all()
+    count = len(jobs_to_delete)
+    if count > 0:
+        ids = [j.id for j in jobs_to_delete]
+        db.query(NotificationJob).filter(NotificationJob.id.in_(ids)).delete(synchronize_session=False)
+        record_audit(
+            db,
+            current_user.id,
+            "NOTIFICATIONS_BULK_DELETED",
+            "notification_job",
+            None,
+            f"Bulk deleted {count} notification jobs (status_filter={status or 'ALL'})",
+        )
+        db.commit()
+
+    return {"deleted": count, "filter": status or "ALL"}
+
+
 @router.delete("/notifications/pending")
 def delete_all_pending_notifications(
     db: Session = Depends(get_db),
