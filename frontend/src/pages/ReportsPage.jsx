@@ -12,7 +12,7 @@ import {
 import { listClasses, listBatches } from '../api/academicStructure'
 import { normalizeError, downloadFile } from '../api/client'
 import { useAuth } from '../context/AuthContext'
-import { openWhatsApp } from '../utils/whatsapp'
+import { openWhatsApp, getStoredWhatsAppTarget, setStoredWhatsAppTarget } from '../utils/whatsapp'
 import PageHeader from '../components/PageHeader'
 import Spinner from '../components/Spinner'
 import ErrorAlert from '../components/ErrorAlert'
@@ -45,6 +45,13 @@ export default function ReportsPage() {
   const [genModalOpen, setGenModalOpen] = useState(false)
   const [genForm, setGenForm] = useState({ period_start: '', period_end: '', class_id: '', batch_id: '' })
   const [generating, setGenerating] = useState(false)
+
+  const [waTarget, setWaTarget] = useState(getStoredWhatsAppTarget() || 'desktop')
+
+  function handleWaTargetChange(newTarget) {
+    setWaTarget(newTarget)
+    setStoredWhatsAppTarget(newTarget)
+  }
 
   const [confirmSend, setConfirmSend] = useState(null) // report object
   const [confirmApproveAndSend, setConfirmApproveAndSend] = useState(null) // report object
@@ -133,12 +140,14 @@ export default function ReportsPage() {
     }
   }
 
-  async function handleSend(report) {
+  async function handleSend(report, targetOverride) {
+    const target = targetOverride || waTarget || 'desktop'
     setActionError('')
     try {
       await sendReport(report.id)
       setConfirmSend(null)
-      setSuccessMsg(`Report #${report.id} sent! Downloading PDF and opening WhatsApp...`)
+      const targetLabel = target === 'web' ? 'WhatsApp Web' : target === 'universal' ? 'wa.me Direct' : 'WhatsApp Desktop'
+      setSuccessMsg(`Report #${report.id} sent! Downloading PDF and opening ${targetLabel}...`)
       setTimeout(() => setSuccessMsg(''), 5000)
 
       // 1. Download PDF report
@@ -150,7 +159,7 @@ export default function ReportsPage() {
 
       // 2. Open WhatsApp
       if (report.whatsapp_number) {
-        handleOpenWhatsAppDirect(report)
+        handleOpenWhatsAppDirect(report, target)
       }
 
       load()
@@ -161,12 +170,14 @@ export default function ReportsPage() {
     }
   }
 
-  async function handleApproveAndSend(report) {
+  async function handleApproveAndSend(report, targetOverride) {
+    const target = targetOverride || waTarget || 'desktop'
     setActionError('')
     try {
       await approveAndSendReport(report.id)
       setConfirmApproveAndSend(null)
-      setSuccessMsg(`Report for ${report.student_name || 'student'} approved and sent! Downloading PDF and opening WhatsApp...`)
+      const targetLabel = target === 'web' ? 'WhatsApp Web' : target === 'universal' ? 'wa.me Direct' : 'WhatsApp Desktop'
+      setSuccessMsg(`Report for ${report.student_name || 'student'} approved & sent! Downloading PDF and opening ${targetLabel}...`)
       setTimeout(() => setSuccessMsg(''), 5000)
 
       // 1. Download PDF report
@@ -178,7 +189,7 @@ export default function ReportsPage() {
 
       // 2. Open WhatsApp directly with student report message
       if (report.whatsapp_number) {
-        handleOpenWhatsAppDirect(report)
+        handleOpenWhatsAppDirect(report, target)
       }
 
       load()
@@ -216,11 +227,12 @@ export default function ReportsPage() {
     }
   }
 
-  function handleOpenWhatsAppDirect(report) {
+  function handleOpenWhatsAppDirect(report, targetOverride) {
     if (!report.whatsapp_number) {
       setActionError(`Student ${report.student_name || 'student'} does not have a registered WhatsApp number.`)
       return
     }
+    const target = targetOverride || waTarget || 'desktop'
 
     let attSummary = ''
     let testSummary = ''
@@ -247,7 +259,7 @@ export default function ReportsPage() {
       testSummary +
       `\n\nYour child's official monthly academic and attendance report has been generated. The detailed PDF report is downloaded and ready for review.\n\n` +
       `*Honor Knowledge Academy*`
-    openWhatsApp(report.whatsapp_number, msg)
+    openWhatsApp(report.whatsapp_number, msg, target)
   }
 
   const className = (id) => (classes || []).find((c) => c.id === id)?.name || 'All Classes'
@@ -423,28 +435,41 @@ export default function ReportsPage() {
                     <td className="px-5 py-3.5">
                       <StatusBadge status={r.status} />
                     </td>
-                    <td className="px-5 py-3.5 text-right space-x-2">
+                    <td className="px-5 py-3.5 text-right space-x-1.5 whitespace-nowrap">
                       {/* Download PDF button */}
                       <button
                         type="button"
                         onClick={() => handleDownload(r)}
-                        className="inline-flex items-center gap-1 text-xs font-semibold text-indigo-600 hover:text-indigo-800 px-2 py-1 rounded bg-indigo-50 hover:bg-indigo-100 transition-colors cursor-pointer"
-                        title="Download Official PDF Report"
+                        className="inline-flex items-center gap-1 text-xs font-semibold text-indigo-700 hover:text-indigo-900 px-2 py-1 rounded bg-indigo-50 hover:bg-indigo-100 transition-colors cursor-pointer border border-indigo-200"
+                        title="Download / View Official PDF Report"
                       >
-                        <i className="fas fa-file-pdf"></i>
+                        <i className="fas fa-file-pdf text-red-500"></i>
                         PDF
                       </button>
 
-                      {/* Direct WhatsApp Web Sender if phone available */}
+                      {/* WhatsApp Desktop Button */}
                       {r.whatsapp_number && (
                         <button
                           type="button"
-                          onClick={() => handleOpenWhatsAppDirect(r)}
-                          className="inline-flex items-center gap-1 text-xs font-semibold text-emerald-700 hover:text-emerald-900 px-2 py-1 rounded bg-emerald-50 hover:bg-emerald-100 transition-colors cursor-pointer"
-                          title="Open WhatsApp Web with report"
+                          onClick={() => handleOpenWhatsAppDirect(r, 'desktop')}
+                          className="inline-flex items-center gap-1 text-xs font-semibold text-emerald-800 hover:text-emerald-950 px-2 py-1 rounded bg-emerald-50 hover:bg-emerald-100 transition-colors cursor-pointer border border-emerald-200"
+                          title="Open directly in WhatsApp Desktop App"
                         >
-                          <i className="fab fa-whatsapp"></i>
-                          WhatsApp
+                          <i className="fab fa-whatsapp text-emerald-600"></i>
+                          WhatsApp Desktop
+                        </button>
+                      )}
+
+                      {/* WhatsApp Web Button */}
+                      {r.whatsapp_number && (
+                        <button
+                          type="button"
+                          onClick={() => handleOpenWhatsAppDirect(r, 'web')}
+                          className="inline-flex items-center gap-1 text-xs font-medium text-gray-700 hover:text-gray-900 px-1.5 py-1 rounded bg-gray-50 hover:bg-gray-100 transition-colors cursor-pointer border border-gray-200"
+                          title="Open in WhatsApp Web (Browser)"
+                        >
+                          <i className="fas fa-globe text-gray-500"></i>
+                          Web
                         </button>
                       )}
 
@@ -466,7 +491,7 @@ export default function ReportsPage() {
                         <button
                           type="button"
                           onClick={() => handleApprove(r, true)}
-                          className="text-xs font-medium text-gray-600 hover:text-gray-900 transition-colors cursor-pointer"
+                          className="text-xs font-medium text-gray-600 hover:text-gray-900 transition-colors cursor-pointer px-1 py-1"
                         >
                           Approve
                         </button>
@@ -573,25 +598,223 @@ export default function ReportsPage() {
         </form>
       </Modal>
 
-      {/* Confirm Send Modal */}
-      <ConfirmDialog
-        open={!!confirmSend}
-        title="Send Report"
-        message={`This will mark the monthly report for ${confirmSend?.student_name || `student #${confirmSend?.student_id}`} as SENT, automatically download the official PDF report, and open WhatsApp with the report summary to ${confirmSend?.whatsapp_number || 'their registered number'}. Continue?`}
-        confirmLabel="Send & Download"
-        onConfirm={() => handleSend(confirmSend)}
-        onCancel={() => setConfirmSend(null)}
-      />
+      {/* Modal: Confirm Send */}
+      {confirmSend && (
+        <Modal
+          open={!!confirmSend}
+          title="Send Monthly Report via WhatsApp"
+          onClose={() => setConfirmSend(null)}
+        >
+          <div className="space-y-4">
+            <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-sm text-blue-900 flex items-start gap-2.5">
+              <i className="fab fa-whatsapp text-emerald-600 text-lg mt-0.5 shrink-0"></i>
+              <div>
+                <p className="font-semibold text-blue-950">
+                  {confirmSend.student_name} ({confirmSend.student_code || `#${confirmSend.student_id}`})
+                </p>
+                <p className="text-xs text-blue-800 mt-0.5">
+                  Guardian: <strong>{confirmSend.guardian_name || 'Parent/Guardian'}</strong> · WhatsApp: <strong>{confirmSend.whatsapp_number || 'No phone'}</strong>
+                </p>
+                <p className="text-xs text-blue-700 mt-1 font-mono">
+                  Period: {confirmSend.period_start} → {confirmSend.period_end}
+                </p>
+              </div>
+            </div>
 
-      {/* Confirm Approve & Send Modal */}
-      <ConfirmDialog
-        open={!!confirmApproveAndSend}
-        title="Approve & Send Report"
-        message={`This will approve the monthly report for ${confirmApproveAndSend?.student_name || `student #${confirmApproveAndSend?.student_id}`}, mark it as SENT, automatically download the official PDF report, and open WhatsApp with the report details to ${confirmApproveAndSend?.whatsapp_number || 'their registered number'}. Continue?`}
-        confirmLabel="Approve & Send"
-        onConfirm={() => handleApproveAndSend(confirmApproveAndSend)}
-        onCancel={() => setConfirmApproveAndSend(null)}
-      />
+            <div>
+              <label className="block text-xs font-semibold uppercase tracking-wider text-gray-600 mb-2">
+                Choose WhatsApp Dispatch Option:
+              </label>
+              <div className="grid grid-cols-3 gap-2">
+                <button
+                  type="button"
+                  onClick={() => handleWaTargetChange('desktop')}
+                  className={`p-2.5 rounded-lg border text-left transition-all cursor-pointer ${
+                    waTarget === 'desktop'
+                      ? 'border-emerald-600 bg-emerald-50/60 ring-2 ring-emerald-500/20'
+                      : 'border-gray-200 hover:border-gray-300 bg-white'
+                  }`}
+                >
+                  <div className="flex items-center gap-1.5 font-semibold text-xs text-gray-900">
+                    <i className="fab fa-whatsapp text-emerald-600"></i>
+                    Desktop App
+                  </div>
+                  <p className="text-[11px] text-gray-500 mt-1">Direct to WhatsApp Desktop (Recommended)</p>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => handleWaTargetChange('web')}
+                  className={`p-2.5 rounded-lg border text-left transition-all cursor-pointer ${
+                    waTarget === 'web'
+                      ? 'border-indigo-600 bg-indigo-50/60 ring-2 ring-indigo-500/20'
+                      : 'border-gray-200 hover:border-gray-300 bg-white'
+                  }`}
+                >
+                  <div className="flex items-center gap-1.5 font-semibold text-xs text-gray-900">
+                    <i className="fas fa-globe text-indigo-600"></i>
+                    WhatsApp Web
+                  </div>
+                  <p className="text-[11px] text-gray-500 mt-1">Opens web.whatsapp.com in browser</p>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => handleWaTargetChange('universal')}
+                  className={`p-2.5 rounded-lg border text-left transition-all cursor-pointer ${
+                    waTarget === 'universal'
+                      ? 'border-blue-600 bg-blue-50/60 ring-2 ring-blue-500/20'
+                      : 'border-gray-200 hover:border-gray-300 bg-white'
+                  }`}
+                >
+                  <div className="flex items-center gap-1.5 font-semibold text-xs text-gray-900">
+                    <i className="fas fa-link text-blue-600"></i>
+                    wa.me Direct
+                  </div>
+                  <p className="text-[11px] text-gray-500 mt-1">Universal web/mobile direct link</p>
+                </button>
+              </div>
+            </div>
+
+            <div className="bg-gray-50 border border-gray-200 rounded-lg p-3 text-xs text-gray-600 space-y-1">
+              <p className="flex items-center gap-1.5 text-gray-700 font-medium">
+                <i className="fas fa-info-circle text-indigo-600"></i>
+                Action Summary:
+              </p>
+              <p>• The official colorful progress report <strong>PDF is downloaded</strong> to your PC.</p>
+              <p>• WhatsApp will open with the complete student score summary pre-filled.</p>
+              <p>• Report status will be marked as <strong>SENT</strong>.</p>
+            </div>
+
+            <div className="flex justify-end gap-3 pt-2">
+              <button
+                type="button"
+                onClick={() => setConfirmSend(null)}
+                className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-md cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => handleSend(confirmSend)}
+                className="px-4 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-md flex items-center gap-1.5 cursor-pointer shadow-xs"
+              >
+                <i className="fas fa-paper-plane"></i>
+                Send via {waTarget === 'desktop' ? 'WhatsApp Desktop' : waTarget === 'web' ? 'WhatsApp Web' : 'wa.me'}
+              </button>
+            </div>
+          </div>
+        </Modal>
+      )}
+
+      {/* Modal: Confirm Approve & Send */}
+      {confirmApproveAndSend && (
+        <Modal
+          open={!!confirmApproveAndSend}
+          title="Approve & Send Monthly Report"
+          onClose={() => setConfirmApproveAndSend(null)}
+        >
+          <div className="space-y-4">
+            <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-3 text-sm text-emerald-900 flex items-start gap-2.5">
+              <i className="fab fa-whatsapp text-emerald-600 text-lg mt-0.5 shrink-0"></i>
+              <div>
+                <p className="font-semibold text-emerald-950">
+                  {confirmApproveAndSend.student_name} ({confirmApproveAndSend.student_code || `#${confirmApproveAndSend.student_id}`})
+                </p>
+                <p className="text-xs text-emerald-800 mt-0.5">
+                  Guardian: <strong>{confirmApproveAndSend.guardian_name || 'Parent/Guardian'}</strong> · WhatsApp: <strong>{confirmApproveAndSend.whatsapp_number || 'No phone'}</strong>
+                </p>
+                <p className="text-xs text-emerald-700 mt-1 font-mono">
+                  Period: {confirmApproveAndSend.period_start} → {confirmApproveAndSend.period_end}
+                </p>
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold uppercase tracking-wider text-gray-600 mb-2">
+                Choose WhatsApp Dispatch Option:
+              </label>
+              <div className="grid grid-cols-3 gap-2">
+                <button
+                  type="button"
+                  onClick={() => handleWaTargetChange('desktop')}
+                  className={`p-2.5 rounded-lg border text-left transition-all cursor-pointer ${
+                    waTarget === 'desktop'
+                      ? 'border-emerald-600 bg-emerald-50/60 ring-2 ring-emerald-500/20'
+                      : 'border-gray-200 hover:border-gray-300 bg-white'
+                  }`}
+                >
+                  <div className="flex items-center gap-1.5 font-semibold text-xs text-gray-900">
+                    <i className="fab fa-whatsapp text-emerald-600"></i>
+                    Desktop App
+                  </div>
+                  <p className="text-[11px] text-gray-500 mt-1">Direct to WhatsApp Desktop (Recommended)</p>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => handleWaTargetChange('web')}
+                  className={`p-2.5 rounded-lg border text-left transition-all cursor-pointer ${
+                    waTarget === 'web'
+                      ? 'border-indigo-600 bg-indigo-50/60 ring-2 ring-indigo-500/20'
+                      : 'border-gray-200 hover:border-gray-300 bg-white'
+                  }`}
+                >
+                  <div className="flex items-center gap-1.5 font-semibold text-xs text-gray-900">
+                    <i className="fas fa-globe text-indigo-600"></i>
+                    WhatsApp Web
+                  </div>
+                  <p className="text-[11px] text-gray-500 mt-1">Opens web.whatsapp.com in browser</p>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => handleWaTargetChange('universal')}
+                  className={`p-2.5 rounded-lg border text-left transition-all cursor-pointer ${
+                    waTarget === 'universal'
+                      ? 'border-blue-600 bg-blue-50/60 ring-2 ring-blue-500/20'
+                      : 'border-gray-200 hover:border-gray-300 bg-white'
+                  }`}
+                >
+                  <div className="flex items-center gap-1.5 font-semibold text-xs text-gray-900">
+                    <i className="fas fa-link text-blue-600"></i>
+                    wa.me Direct
+                  </div>
+                  <p className="text-[11px] text-gray-500 mt-1">Universal web/mobile direct link</p>
+                </button>
+              </div>
+            </div>
+
+            <div className="bg-gray-50 border border-gray-200 rounded-lg p-3 text-xs text-gray-600 space-y-1">
+              <p className="flex items-center gap-1.5 text-gray-700 font-medium">
+                <i className="fas fa-info-circle text-emerald-600"></i>
+                Action Summary:
+              </p>
+              <p>• Report status will be approved and marked as <strong>SENT</strong>.</p>
+              <p>• The official colorful progress report <strong>PDF is downloaded</strong> to your PC.</p>
+              <p>• WhatsApp will open with the complete student score summary pre-filled.</p>
+            </div>
+
+            <div className="flex justify-end gap-3 pt-2">
+              <button
+                type="button"
+                onClick={() => setConfirmApproveAndSend(null)}
+                className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-md cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => handleApproveAndSend(confirmApproveAndSend)}
+                className="px-4 py-2 text-sm font-medium text-white bg-emerald-600 hover:bg-emerald-700 rounded-md flex items-center gap-1.5 cursor-pointer shadow-xs"
+              >
+                <i className="fas fa-paper-plane"></i>
+                Approve & Send via {waTarget === 'desktop' ? 'WhatsApp Desktop' : waTarget === 'web' ? 'WhatsApp Web' : 'wa.me'}
+              </button>
+            </div>
+          </div>
+        </Modal>
+      )}
 
       {/* Confirm Bulk Approve & Send All */}
       <ConfirmDialog

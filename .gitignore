@@ -64,3 +64,4 @@ electron/release/
 electron/app-dist/
 electron/node_modules/
 *.core
+scratch/

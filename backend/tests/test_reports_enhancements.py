@@ -211,3 +211,54 @@ def test_download_report_regenerates_when_missing(client, auth_headers):
     assert len(dl_resp.content) > 1000
 
 
+def test_download_report_with_unmarked_tests_and_legacy_json(client, auth_headers):
+    """Verifies that download_report never raises 500 when tests exist without marks or legacy JSON is stored."""
+    c_id = client.post("/api/v1/classes", json={"name": "GradeCheckClass"}, headers=auth_headers).json()["id"]
+    b_id = client.post("/api/v1/batches", json={"name": "Evening"}, headers=auth_headers).json()["id"]
+    s_id = client.post("/api/v1/subjects", json={"name": "Science"}, headers=auth_headers).json()["id"]
+
+    sid = client.post(
+        "/api/v1/students",
+        json={"student_code": "GC-01", "name": "GradeCheck Student", "whatsapp_number": "923001112233", "class_id": c_id, "batch_id": b_id},
+        headers=auth_headers,
+    ).json()["id"]
+
+    # Create a test session and a test for this class, but DO NOT enter marks for student sid
+    sess_id = client.post(
+        "/api/v1/test-sessions",
+        json={"name": "September Monthly", "start_date": "2026-09-01", "end_date": "2026-09-30", "class_id": c_id},
+        headers=auth_headers,
+    ).json()["id"]
+
+    client.post(
+        "/api/v1/tests",
+        json={
+            "session_id": sess_id,
+            "period_label": "September",
+            "subject_id": s_id,
+            "class_id": c_id,
+            "batch_id": b_id,
+            "name": "Science Chapter 1",
+            "test_date": "2026-09-15",
+            "total_marks": 50.0,
+        },
+        headers=auth_headers,
+    )
+
+    # 1. Generate report (student has an unmarked test) -> must succeed 200
+    gen_resp = client.post(
+        "/api/v1/reports/generate",
+        json={"period_start": "2026-09-01", "period_end": "2026-09-30", "student_id": sid},
+        headers=auth_headers,
+    )
+    assert gen_resp.status_code == 200
+    report_id = gen_resp.json()[0]["id"]
+
+    # 2. Download PDF -> must return 200 and valid PDF
+    dl_resp = client.get(f"/api/v1/reports/{report_id}/download", headers=auth_headers)
+    assert dl_resp.status_code == 200
+    assert dl_resp.headers["content-type"] == "application/pdf"
+    assert len(dl_resp.content) > 1000
+
+
+

@@ -39,3 +39,14 @@ def register_exception_handlers(app: FastAPI) -> None:
             content={"error": {"code": exc.code, "message": exc.message}},
             headers=headers,
         )
+
+    @app.exception_handler(Exception)
+    async def handle_general_exception(_request: Request, exc: Exception):
+        import logging
+        import traceback
+        tb = traceback.format_exc()
+        logging.getLogger("acadexa.errors").error("Unhandled Exception: %s\n%s", exc, tb)
+        return JSONResponse(
+            status_code=500,
+            content={"error": {"code": "INTERNAL_SERVER_ERROR", "message": str(exc)}},
+        )

@@ -9,10 +9,14 @@ or via explicit "Approve & Send" user confirmation.
 import calendar
 import json
 import os
+import logging
 from datetime import date, datetime, timedelta, timezone
 from typing import Optional
 
+from sqlalchemy import or_
 from sqlalchemy.orm import Session, joinedload
+
+logger = logging.getLogger("acadexa.report_service")
 
 from app.core.errors import AppError, ConflictError, NotFoundError
 from app.models.academic_structure import Batch, ClassRoom
@@ -31,6 +35,11 @@ from app.services.settings_service import get_setting
 def _attendance_stats_for_student(
     db: Session, student_id: int, period_start: date, period_end: date
 ) -> tuple[dict, list[dict]]:
+    if isinstance(period_start, str):
+        period_start = date.fromisoformat(period_start)
+    if isinstance(period_end, str):
+        period_end = date.fromisoformat(period_end)
+
     rows = (
         db.query(Attendance)
         .filter(
@@ -63,7 +72,11 @@ def _attendance_stats_for_student(
     }
 
     # Full month calendar: account for every calendar day in [period_start, period_end]
-    rows_map = {r.date: r for r in rows}
+    rows_map = {}
+    for r in rows:
+        r_d = date.fromisoformat(r.date) if isinstance(r.date, str) else r.date
+        rows_map[r_d] = r
+
     daily_records = []
     curr = period_start
     while curr <= period_end:
@@ -93,10 +106,14 @@ def _tests_summary_for_student(
     """Finds all tests conducted in [period_start, period_end] for the student's class,
     batch, or any test the student took, along with obtained marks, percentages and grades.
     """
+    if isinstance(period_start, str):
+        period_start = date.fromisoformat(period_start)
+    if isinstance(period_end, str):
+        period_end = date.fromisoformat(period_end)
+
     # 1. Tests where student has marks recorded
-    marked_test_ids = [
-        m.test_id
-        for m in db.query(Marks.test_id)
+    marked_test_ids_raw = (
+        db.query(Marks.test_id)
         .join(Test, Marks.test_id == Test.id)
         .filter(
             Marks.student_id == student.id,
@@ -104,27 +121,37 @@ def _tests_summary_for_student(
             Test.test_date <= period_end,
         )
         .all()
+    )
+    marked_test_ids = [
+        m[0] if isinstance(m, (tuple, list)) else getattr(m, "test_id", m)
+        for m in marked_test_ids_raw
     ]
+    marked_test_ids = [x for x in marked_test_ids if isinstance(x, int)]
 
-    # 2. Query all tests for student's class / batch or general or where student has marks
-    query_filter = (
-        (Test.test_date >= period_start)
-        & (Test.test_date <= period_end)
-        & (
-            (Test.class_id == student.class_id)
-            | (Test.batch_id == student.batch_id)
-            | (Test.class_id.is_(None))
-            | (Test.id.in_(marked_test_ids))
+    # 2. Query all tests for student's class / batch or where student has marks
+    or_conditions = []
+    if student.class_id:
+        or_conditions.append(Test.class_id == student.class_id)
+    if student.batch_id:
+        or_conditions.append(Test.batch_id == student.batch_id)
+    if marked_test_ids:
+        or_conditions.append(Test.id.in_(marked_test_ids))
+
+    if not or_conditions:
+        tests = []
+    else:
+        query_filter = (
+            (Test.test_date >= period_start)
+            & (Test.test_date <= period_end)
+            & or_(*or_conditions)
         )
-    )
-
-    tests = (
-        db.query(Test)
-        .options(joinedload(Test.subject))
-        .filter(query_filter)
-        .order_by(Test.test_date.asc())
-        .all()
-    )
+        tests = (
+            db.query(Test)
+            .options(joinedload(Test.subject))
+            .filter(query_filter)
+            .order_by(Test.test_date.asc())
+            .all()
+        )
 
     test_ids = [t.id for t in tests]
     marks_map: dict[int, Marks] = {}
@@ -145,7 +172,9 @@ def _tests_summary_for_student(
         subj_name = t.subject.name if t.subject else "General"
         obtained = m.obtained_marks if m else None
         pct = m.percentage if m else None
-        grade = m.grade or (compute_grade(pct) if pct is not None else None)
+        grade = None
+        if m:
+            grade = m.grade or (compute_grade(pct) if pct is not None else None)
 
         if obtained is not None:
             total_max += t.total_marks
@@ -186,6 +215,9 @@ def _get_previous_months_summary(
     """Generates an oneliner historical performance summary for up to `num_months`
     prior to `current_period_start`.
     """
+    if isinstance(current_period_start, str):
+        current_period_start = date.fromisoformat(current_period_start)
+
     history = []
     year = current_period_start.year
     month = current_period_start.month
@@ -222,15 +254,22 @@ def _get_previous_months_summary(
         if past_rep and past_rep.data_json:
             try:
                 pj = json.loads(past_rep.data_json)
-                att_data = pj.get("attendance", {})
-                att_pct = att_data.get("percentage")
-                att_present = att_data.get("present", 0) + att_data.get("late", 0)
-                att_total = att_data.get("total_classes", 0)
+                if isinstance(pj, dict):
+                    att_data = pj.get("attendance")
+                    if isinstance(att_data, dict):
+                        att_pct = att_data.get("percentage")
+                        att_present = (att_data.get("present") or 0) + (att_data.get("late") or 0)
+                        att_total = att_data.get("total_classes") or 0
+                    elif "total_classes" in pj:
+                        att_pct = pj.get("percentage")
+                        att_present = (pj.get("present") or 0) + (pj.get("late") or 0)
+                        att_total = pj.get("total_classes") or 0
 
-                acad_data = pj.get("academics", {})
-                tests_count = acad_data.get("total_tests", 0)
-                test_pct = acad_data.get("overall_percentage")
-                grade = acad_data.get("overall_grade", "—")
+                    acad_data = pj.get("academics")
+                    if isinstance(acad_data, dict):
+                        tests_count = acad_data.get("total_tests") or 0
+                        test_pct = acad_data.get("overall_percentage")
+                        grade = acad_data.get("overall_grade") or "—"
             except Exception:
                 pass
 
@@ -320,6 +359,13 @@ def ensure_report_pdf(db: Session, report: MonthlyReport) -> str:
 
     academy_name = get_setting(db, "academy_name") or "Honor Knowledge Academy"
 
+    p_start = report.period_start
+    if isinstance(p_start, str):
+        p_start = date.fromisoformat(p_start)
+    p_end = report.period_end
+    if isinstance(p_end, str):
+        p_end = date.fromisoformat(p_end)
+
     payload = {}
     if report.data_json:
         try:
@@ -332,16 +378,52 @@ def ensure_report_pdf(db: Session, report: MonthlyReport) -> str:
     tests_stats = payload.get("academics")
     prev_months = payload.get("previous_months")
 
-    if not stats or not daily_records:
-        stats, daily_records = _attendance_stats_for_student(
-            db, student.id, report.period_start, report.period_end
-        )
-    if not tests_stats:
-        tests_stats = _tests_summary_for_student(
-            db, student, report.period_start, report.period_end
-        )
-    if not prev_months:
-        prev_months = _get_previous_months_summary(db, student.id, report.period_start)
+    # If payload is legacy flat format
+    if not stats and "total_classes" in payload:
+        stats = {
+            "total_classes": payload.get("total_classes", 0),
+            "present": payload.get("present", 0),
+            "absent": payload.get("absent", 0),
+            "late": payload.get("late", 0),
+            "leave": payload.get("leave", 0),
+            "percentage": payload.get("percentage", 0.0),
+        }
+
+    try:
+        if not stats or not daily_records:
+            stats, daily_records = _attendance_stats_for_student(
+                db, student.id, p_start, p_end
+            )
+    except Exception as exc:
+        logger.warning("Error computing attendance stats for student %s: %s", student.id, exc)
+        if not stats:
+            stats = {"total_classes": 0, "present": 0, "absent": 0, "late": 0, "leave": 0, "percentage": 0.0}
+        if not daily_records:
+            daily_records = []
+
+    try:
+        if not tests_stats:
+            tests_stats = _tests_summary_for_student(
+                db, student, p_start, p_end
+            )
+    except Exception as exc:
+        logger.warning("Error computing tests summary for student %s: %s", student.id, exc)
+        tests_stats = {
+            "tests": [],
+            "total_tests": 0,
+            "tests_attempted": 0,
+            "total_max_marks": 0.0,
+            "total_obtained_marks": 0.0,
+            "overall_percentage": 0.0,
+            "overall_grade": "—",
+        }
+
+    try:
+        if not prev_months:
+            prev_months = _get_previous_months_summary(db, student.id, p_start)
+    except Exception as exc:
+        logger.warning("Error computing previous months for student %s: %s", student.id, exc)
+        prev_months = []
 
     full_payload = {
         "student_name": student.name,
@@ -350,8 +432,8 @@ def ensure_report_pdf(db: Session, report: MonthlyReport) -> str:
         "batch_name": student.batch.name if student.batch else "",
         "guardian_name": student.guardian_name or "Parent/Guardian",
         "whatsapp_number": student.whatsapp_number,
-        "period_start": report.period_start.isoformat(),
-        "period_end": report.period_end.isoformat(),
+        "period_start": p_start.isoformat(),
+        "period_end": p_end.isoformat(),
         "attendance": stats,
         "daily_records": daily_records,
         "academics": tests_stats,
@@ -363,8 +445,8 @@ def ensure_report_pdf(db: Session, report: MonthlyReport) -> str:
         academy_name=academy_name,
         student_name=student.name,
         student_code=student.student_code,
-        period_start=report.period_start,
-        period_end=report.period_end,
+        period_start=p_start,
+        period_end=p_end,
         stats=stats,
         report_id=report.id,
         tests_stats=tests_stats,
@@ -373,8 +455,11 @@ def ensure_report_pdf(db: Session, report: MonthlyReport) -> str:
         previous_months=prev_months,
     )
     report.file_path = pdf_path
-    db.commit()
-    db.refresh(report)
+    try:
+        db.commit()
+        db.refresh(report)
+    except Exception:
+        db.rollback()
     return pdf_path
 
 

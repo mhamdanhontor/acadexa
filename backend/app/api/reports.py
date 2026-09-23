@@ -1,4 +1,5 @@
 """Monthly report API: generate, list, approve/reject, send, download PDF, month-end reminder."""
+import logging
 import os
 from typing import Optional
 
@@ -8,7 +9,9 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session, joinedload
 
 from app.core.deps import get_current_user, require_roles
-from app.core.errors import NotFoundError
+from app.core.errors import AppError, NotFoundError
+
+logger = logging.getLogger("acadexa.reports")
 from app.db.session import get_db
 from app.models.academic_structure import Batch, ClassRoom
 from app.models.enums import ReportStatus, ReportType, RoleName
@@ -182,7 +185,14 @@ def download_report(
     if report is None:
         raise NotFoundError("Report not found.")
 
-    file_path = ensure_report_pdf(db, report)
+    try:
+        file_path = ensure_report_pdf(db, report)
+    except AppError:
+        raise
+    except Exception as exc:
+        logger.exception("Failed to generate or retrieve PDF for report ID %s: %s", report_id, exc)
+        raise AppError(f"Report PDF generation error: {exc}", status_code=500)
+
     if not file_path or not os.path.exists(file_path):
         raise NotFoundError("Report PDF file could not be generated.")
 
