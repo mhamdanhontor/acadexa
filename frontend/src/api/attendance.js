@@ -8,7 +8,9 @@ export const updateAttendanceRecord = (id, status) =>
 export const getAttendanceSummary = (params) => apiClient.get('/attendance/summary', { params }).then((r) => r.data)
 export const getAbsentNotifications = (params) =>
   apiClient.get('/attendance/absent-notifications', { params }).then((r) => r.data)
-export const getAllEnrolledAttendance = (params) =>
-  apiClient.get('/attendance/all-enrolled', { params }).then((r) => r.data)
+export const getAllEnrolledAttendance = (params) => {
+  const query = typeof params === 'string' ? { date: params } : (params && typeof params === 'object' ? params : {})
+  return apiClient.get('/attendance/all-enrolled', { params: query }).then((r) => r.data)
+}
 export const saveAllEnrolledAttendance = (payload) =>
   apiClient.post('/attendance/all-enrolled', payload).then((r) => r.data)

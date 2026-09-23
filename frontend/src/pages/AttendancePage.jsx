@@ -56,8 +56,12 @@ export default function AttendancePage() {
   async function loadLookups() {
     try {
       const [c, b] = await Promise.all([listClasses({ page_size: 100 }), listBatches({ page_size: 100 })])
-      setClasses(Array.isArray(c) ? c : (c?.items || []))
-      setBatches(Array.isArray(b) ? b : (b?.items || []))
+      const cls = Array.isArray(c) ? c : (c?.items || [])
+      const bts = Array.isArray(b) ? b : (b?.items || [])
+      setClasses(cls)
+      setBatches(bts)
+      if (cls.length > 0 && !classId) setClassId(String(cls[0].id))
+      if (bts.length > 0 && !batchId) setBatchId(String(bts[0].id))
     } catch (err) {
       setError(normalizeError(err).message)
     }
@@ -79,7 +83,10 @@ export default function AttendancePage() {
         listStudents({ class_id: classId, batch_id: batchId, is_active: true, page_size: 200 }),
         getAttendanceByDate({ date, class_id: classId, batch_id: batchId }),
       ])
-      const sItems = Array.isArray(studentData) ? studentData : (studentData?.items || [])
+      const raw = Array.isArray(studentData) ? studentData : (studentData?.items || [])
+      const sItems = [...raw].sort((a, b) =>
+        (a.student_code || '').localeCompare(b.student_code || '', undefined, { numeric: true }) || (a.id - b.id)
+      )
       const recs = Array.isArray(existingRecords) ? existingRecords : (existingRecords?.items || [])
       setStudents(sItems)
 
