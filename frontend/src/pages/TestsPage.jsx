@@ -7,6 +7,7 @@ import {
   deleteTestSession,
   listTests,
   createTest,
+  updateTest,
   deleteTest,
 } from '../api/academics'
 import { listClasses, listBatches, listSubjects } from '../api/academicStructure'
@@ -63,6 +64,10 @@ export default function TestsPage() {
 
   const [testModalOpen, setTestModalOpen] = useState(false)
   const [testForm, setTestForm] = useState(EMPTY_TEST_FORM)
+
+  const [editingTest, setEditingTest] = useState(null)
+  const [editTestModalOpen, setEditTestModalOpen] = useState(false)
+  const [editTestForm, setEditTestForm] = useState(EMPTY_TEST_FORM)
 
   const [saving, setSaving] = useState(false)
   const [formError, setFormError] = useState('')
@@ -209,11 +214,14 @@ export default function TestsPage() {
     if (!selectedSession || !selectedSubject) return
     const count = currentSubjectTests.length
     const suggestedName = `Test ${count + 1}`
+    const defaultClassId = selectedSession.class_id
+      ? String(selectedSession.class_id)
+      : (classes.length === 1 ? String(classes[0].id) : '')
     setTestForm({
       ...EMPTY_TEST_FORM,
       session_id: selectedSession.id,
       subject_id: selectedSubject.id,
-      class_id: selectedSession.class_id || classes[0]?.id || '',
+      class_id: defaultClassId,
       batch_id: '',
       name: suggestedName,
       test_date: new Date().toISOString().slice(0, 10),
@@ -248,6 +256,52 @@ export default function TestsPage() {
       setTestModalOpen(false)
       setSuccessMsg(`Test "${created.name}" created successfully.`)
       // Refresh tests
+      const t = await listTests()
+      setTests(Array.isArray(t) ? t : t?.items || [])
+    } catch (err) {
+      setFormError(normalizeError(err).message)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  // Handlers for Test Update (Edit Test)
+  function openEditTest(test) {
+    setEditingTest(test)
+    setEditTestForm({
+      name: test.name,
+      class_id: test.class_id ? String(test.class_id) : '',
+      batch_id: test.batch_id ? String(test.batch_id) : '',
+      test_date: test.test_date,
+      period_label: test.period_label || '',
+      total_marks: test.total_marks,
+    })
+    setFormError('')
+    setEditTestModalOpen(true)
+  }
+
+  async function handleUpdateTest(e) {
+    e.preventDefault()
+    if (!editingTest) return
+    setSaving(true)
+    setFormError('')
+    if (!editTestForm.class_id) {
+      setFormError('Please select a class for this test.')
+      setSaving(false)
+      return
+    }
+    try {
+      const payload = {
+        name: (editTestForm.name || '').trim(),
+        class_id: Number(editTestForm.class_id),
+        batch_id: editTestForm.batch_id ? Number(editTestForm.batch_id) : null,
+        total_marks: Number(editTestForm.total_marks),
+        period_label: (editTestForm.period_label || '').trim() || 'General',
+        test_date: editTestForm.test_date,
+      }
+      const updated = await updateTest(editingTest.id, payload)
+      setEditTestModalOpen(false)
+      setSuccessMsg(`Test "${updated.name}" updated successfully.`)
       const t = await listTests()
       setTests(Array.isArray(t) ? t : t?.items || [])
     } catch (err) {
@@ -768,6 +822,17 @@ export default function TestsPage() {
                               {canManage && (
                                 <button
                                   type="button"
+                                  onClick={() => openEditTest(t)}
+                                  className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-gray-100 hover:bg-gray-200 text-gray-700 text-xs font-semibold transition-colors cursor-pointer"
+                                  title="Edit Test Class, Batch, or Marks"
+                                >
+                                  <i className="fas fa-pen-to-square text-[11px]"></i>
+                                  Edit
+                                </button>
+                              )}
+                              {canManage && (
+                                <button
+                                  type="button"
                                   onClick={(e) => confirmDeleteTest(t, e)}
                                   className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-gray-400 hover:text-red-600 hover:bg-red-50 text-xs font-semibold transition-colors cursor-pointer"
                                   title="Delete Test"
@@ -1071,6 +1136,109 @@ export default function TestsPage() {
               className="px-4 py-2 text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg disabled:opacity-60 cursor-pointer"
             >
               {saving ? 'Creating...' : 'Create Test'}
+            </button>
+          </div>
+        </form>
+      </Modal>
+
+      {/* ============================================================ */}
+      {/* MODAL: EDIT TEST                                             */}
+      {/* ============================================================ */}
+      <Modal open={editTestModalOpen} title="Edit Test Details" onClose={() => setEditTestModalOpen(false)} width="max-w-lg">
+        <form onSubmit={handleUpdateTest} className="space-y-4">
+          {formError && <ErrorAlert message={formError} />}
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Test Name</label>
+            <input
+              required
+              value={editTestForm.name}
+              onChange={(e) => setEditTestForm({ ...editTestForm, name: e.target.value })}
+              className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 font-medium text-gray-900"
+            />
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Class</label>
+              <select
+                required
+                value={editTestForm.class_id}
+                onChange={(e) => setEditTestForm({ ...editTestForm, class_id: e.target.value })}
+                className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 font-medium"
+              >
+                <option value="">Select class</option>
+                {(classes || []).map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Batch / Shift</label>
+              <select
+                value={editTestForm.batch_id}
+                onChange={(e) => setEditTestForm({ ...editTestForm, batch_id: e.target.value })}
+                className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              >
+                <option value="">All Batches (Whole Class)</option>
+                {(batches || []).map((b) => (
+                  <option key={b.id} value={b.id}>
+                    {b.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Test Date</label>
+              <input
+                required
+                type="date"
+                value={editTestForm.test_date}
+                onChange={(e) => setEditTestForm({ ...editTestForm, test_date: e.target.value })}
+                className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Total Marks</label>
+              <input
+                required
+                type="number"
+                min="1"
+                step="0.5"
+                value={editTestForm.total_marks}
+                onChange={(e) => setEditTestForm({ ...editTestForm, total_marks: e.target.value })}
+                className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 font-semibold"
+              />
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Syllabus</label>
+            <input
+              required
+              value={editTestForm.period_label}
+              onChange={(e) => setEditTestForm({ ...editTestForm, period_label: e.target.value })}
+              className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              placeholder="e.g. Chapter 1, Organic Chemistry"
+            />
+          </div>
+
+          <div className="flex justify-end gap-3 pt-3 border-t border-gray-100">
+            <button
+              type="button"
+              onClick={() => setEditTestModalOpen(false)}
+              className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg cursor-pointer"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={saving}
+              className="px-4 py-2 text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg disabled:opacity-60 cursor-pointer"
+            >
+              {saving ? 'Saving...' : 'Save Changes'}
             </button>
           </div>
         </form>

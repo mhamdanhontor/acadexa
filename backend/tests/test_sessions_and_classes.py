@@ -82,3 +82,14 @@ def test_create_test_without_batch_for_whole_class(client, auth_headers):
     )
     assert test_resp.status_code == 201
     assert test_resp.json()["batch_id"] is None
+    test_id = test_resp.json()["id"]
+
+    # Test update_test endpoint
+    update_resp = client.put(
+        f"/api/v1/tests/{test_id}",
+        json={"name": "Chapter 1 Chemistry Test (Revised)", "total_marks": 75},
+        headers=auth_headers,
+    )
+    assert update_resp.status_code == 200
+    assert update_resp.json()["name"] == "Chapter 1 Chemistry Test (Revised)"
+    assert update_resp.json()["total_marks"] == 75.0

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import { listTestSessions, listTests, listMarks, saveBulkMarks, getMarksNotifications } from '../api/academics'
-import { listSubjects } from '../api/academicStructure'
+import { listTestSessions, listTests, listMarks, saveBulkMarks, updateTest } from '../api/academics'
+import { listSubjects, listClasses, listBatches } from '../api/academicStructure'
 import { listStudents } from '../api/students'
 import { normalizeError } from '../api/client'
 import { useUnsavedChangesWarning, confirmLeaveIfUnsaved } from '../hooks/useUnsavedChangesWarning'
@@ -20,6 +20,8 @@ export default function MarksPage() {
   const [sessionId, setSessionId] = useState(initialSessionId)
   const [subjects, setSubjects] = useState([])
   const [subjectId, setSubjectId] = useState('')
+  const [classes, setClasses] = useState([])
+  const [batches, setBatches] = useState([])
   const [tests, setTests] = useState([])
   const [testId, setTestId] = useState(initialTestId)
   const [selectedTest, setSelectedTest] = useState(null)
@@ -44,10 +46,17 @@ export default function MarksPage() {
   useUnsavedChangesWarning(hasUnsavedChanges)
 
   useEffect(() => {
-    Promise.all([listTestSessions(), listSubjects({ page_size: 100 })])
-      .then(([s, subj]) => {
+    Promise.all([
+      listTestSessions(),
+      listSubjects({ page_size: 100 }),
+      listClasses().catch(() => []),
+      listBatches().catch(() => []),
+    ])
+      .then(([s, subj, cls, btc]) => {
         setSessions(Array.isArray(s) ? s : s?.items || [])
         setSubjects(Array.isArray(subj) ? subj : subj?.items || [])
+        setClasses(Array.isArray(cls) ? cls : cls?.items || [])
+        setBatches(Array.isArray(btc) ? btc : btc?.items || [])
       })
       .catch((err) => setError(normalizeError(err).message))
   }, [])
@@ -90,12 +99,63 @@ export default function MarksPage() {
       }
       setSelectedTest(test)
 
-      const [studentData, existingMarks] = await Promise.all([
-        listStudents({ class_id: test.class_id, is_active: true, page_size: 200 }),
-        listMarks({ test_id: testId, page_size: 200 }),
-      ])
-      const rawStudents = Array.isArray(studentData) ? studentData : (studentData?.items || [])
-      // Sort in ascending order of Student ID (natural numeric sorting)
+      // Multi-tier resilient student roster retrieval:
+      let rawStudents = []
+
+      // Tier 1: If test has both class_id and batch_id, query specifically for that class & batch
+      if (test.class_id && test.batch_id) {
+        try {
+          const res = await listStudents({ class_id: test.class_id, batch_id: test.batch_id, is_active: true, page_size: 200 })
+          rawStudents = Array.isArray(res) ? res : (res?.items || [])
+        } catch {
+          rawStudents = []
+        }
+      }
+
+      // Tier 2: If test has class_id (or Tier 1 was empty), query all students of this class across all batches
+      if (rawStudents.length === 0 && test.class_id) {
+        try {
+          const res = await listStudents({ class_id: test.class_id, is_active: true, page_size: 200 })
+          rawStudents = Array.isArray(res) ? res : (res?.items || [])
+        } catch {
+          rawStudents = []
+        }
+      }
+
+      // Tier 3: If test has batch_id and no students found yet, query all students of this batch
+      if (rawStudents.length === 0 && test.batch_id) {
+        try {
+          const res = await listStudents({ batch_id: test.batch_id, is_active: true, page_size: 200 })
+          rawStudents = Array.isArray(res) ? res : (res?.items || [])
+        } catch {
+          rawStudents = []
+        }
+      }
+
+      // Tier 4: If parent session has a class_id, query students of the session's class
+      const parentSession = (sessions || []).find((s) => String(s.id) === String(sessionId))
+      if (rawStudents.length === 0 && parentSession?.class_id) {
+        try {
+          const res = await listStudents({ class_id: parentSession.class_id, is_active: true, page_size: 200 })
+          rawStudents = Array.isArray(res) ? res : (res?.items || [])
+        } catch {
+          rawStudents = []
+        }
+      }
+
+      // Tier 5: Ultimate fallback to all active students so the teacher is NEVER locked out
+      if (rawStudents.length === 0) {
+        try {
+          const res = await listStudents({ is_active: true, page_size: 200 })
+          rawStudents = Array.isArray(res) ? res : (res?.items || [])
+        } catch {
+          rawStudents = []
+        }
+      }
+
+      const existingMarks = await listMarks({ test_id: testId, page_size: 200 }).catch(() => [])
+
+      // Sort in ascending order of Student ID (natural numeric sorting: e.g. HKA-0001, HKA-0002)
       const sItems = [...rawStudents].sort((a, b) =>
         (a.student_code || '').localeCompare(b.student_code || '', undefined, { numeric: true }) || (a.id - b.id)
       )
@@ -112,6 +172,38 @@ export default function MarksPage() {
       setMarksMap(map)
       setSavedMarksMap(map)
       setRowErrors({})
+    } catch (err) {
+      setError(normalizeError(err).message)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  async function handleChangeTestClass(newClassId) {
+    if (!selectedTest || !newClassId) return
+    setLoading(true)
+    setError(null)
+    setSuccessMsg('')
+    try {
+      const updated = await updateTest(selectedTest.id, { class_id: Number(newClassId) })
+      setSelectedTest(updated)
+      setTests((prev) => prev.map((t) => (t.id === updated.id ? updated : t)))
+      const className = classes.find((c) => c.id === Number(newClassId))?.name || newClassId
+      setSuccessMsg(`Test assigned to class "${className}".`)
+      // Refresh students for newly assigned class
+      const res = await listStudents({ class_id: Number(newClassId), is_active: true, page_size: 200 })
+      const sData = Array.isArray(res) ? res : (res?.items || [])
+      const sItems = [...sData].sort((a, b) =>
+        (a.student_code || '').localeCompare(b.student_code || '', undefined, { numeric: true }) || (a.id - b.id)
+      )
+      setStudents(sItems)
+      const existingMarks = await listMarks({ test_id: selectedTest.id, page_size: 200 }).catch(() => [])
+      const mItems = Array.isArray(existingMarks) ? existingMarks : (existingMarks?.items || [])
+      const map = {}
+      sItems.forEach((s) => { map[s.id] = '' })
+      mItems.forEach((m) => { map[m.student_id] = String(m.obtained_marks) })
+      setMarksMap(map)
+      setSavedMarksMap(map)
     } catch (err) {
       setError(normalizeError(err).message)
     } finally {
@@ -335,7 +427,13 @@ export default function MarksPage() {
         </div>
 
         {selectedTest && (
-          <div className="text-xs text-gray-600 bg-gray-50 border border-gray-200 px-3 py-2 rounded-lg flex items-center gap-3">
+          <div className="text-xs text-gray-600 bg-gray-50 border border-gray-200 px-3 py-2 rounded-lg flex items-center gap-3 flex-wrap">
+            <span className="flex items-center gap-1.5 font-medium text-gray-800">
+              <i className="fas fa-chalkboard-user text-indigo-500"></i>
+              Class: <strong>{classes.find((c) => c.id === selectedTest.class_id)?.name || 'All Classes'}</strong>
+              {selectedTest.batch_id ? ` / ${batches.find((b) => b.id === selectedTest.batch_id)?.name || 'Batch'}` : ' (All Batches)'}
+            </span>
+            <span className="text-gray-300">|</span>
             <span>
               Total Marks: <strong className="text-gray-900">{selectedTest.total_marks}</strong>
             </span>
@@ -343,6 +441,26 @@ export default function MarksPage() {
             <span>
               Syllabus: <strong className="text-gray-900">{selectedTest.period_label || '—'}</strong>
             </span>
+            {classes.length > 0 && (
+              <>
+                <span className="text-gray-300">|</span>
+                <div className="flex items-center gap-1.5">
+                  <span className="text-gray-500">Change Class:</span>
+                  <select
+                    value={selectedTest.class_id || ''}
+                    onChange={(e) => handleChangeTestClass(e.target.value)}
+                    className="bg-white border border-gray-300 rounded px-2 py-0.5 text-xs text-indigo-700 font-semibold focus:outline-none focus:ring-1 focus:ring-indigo-500 cursor-pointer"
+                    title="Change target class for this test"
+                  >
+                    {classes.map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {c.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </>
+            )}
           </div>
         )}
       </div>
@@ -361,8 +479,12 @@ export default function MarksPage() {
       ) : loading ? (
         <div className="flex justify-center py-16"><Spinner size="lg" /></div>
       ) : students.length === 0 ? (
-        <div className="bg-white rounded-xl border border-gray-200">
-          <EmptyState title="No active students for this class/batch" icon="fa-user-graduate" />
+        <div className="bg-white rounded-xl border border-gray-200 p-6 text-center">
+          <EmptyState
+            title="No active students found"
+            subtitle="No active students matched this class or batch. You can change the test's class using the dropdown above or check enrolled students in the Students tab."
+            icon="fa-user-graduate"
+          />
         </div>
       ) : (
         <>

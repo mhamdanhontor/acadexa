@@ -50,6 +50,16 @@ class TestCreate(TestBase):
     pass
 
 
+class TestUpdate(BaseModel):
+    name: Optional[str] = Field(default=None, min_length=1, max_length=150)
+    period_label: Optional[str] = Field(default=None, min_length=1, max_length=50)
+    class_id: Optional[int] = None
+    batch_id: Optional[int] = None
+    subject_id: Optional[int] = None
+    test_date: Optional[date] = None
+    total_marks: Optional[float] = Field(default=None, gt=0)
+
+
 class TestOut(TestBase):
     id: int
     created_at: datetime

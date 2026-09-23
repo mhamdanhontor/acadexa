@@ -1,5 +1,5 @@
 """Schemas for Quick Test Marks entry and dispatch."""
-from datetime import date
+import datetime as dt
 from typing import Optional
 from pydantic import BaseModel, Field
 
@@ -15,7 +15,7 @@ class QuickMarkRecord(BaseModel):
 class QuickMarksRequest(BaseModel):
     test_name: Optional[str] = "Class Quiz / Test"
     subject: Optional[str] = "General"
-    date: Optional[date] = None
+    date: Optional[dt.date] = None
     records: list[QuickMarkRecord] = Field(..., min_length=1)
 
 

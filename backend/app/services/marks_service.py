@@ -5,6 +5,8 @@ Implements backend requirement #28 (server-side validation: 0 <= obtained
 and #30 (marks notification job created immediately on save, without
 blocking on WhatsApp delivery).
 """
+import datetime as dt
+
 from sqlalchemy.orm import Session
 
 from app.core.errors import NotFoundError, ValidationAppError
@@ -285,6 +287,7 @@ def save_quick_marks(db: Session, payload: "QuickMarksRequest", user_id: int) ->
                 "guardian_name_ur": get_guardian_urdu_name(student),
                 "subject": subject,
                 "test_name": test_name,
+                "date": str(payload.date or dt.date.today()),
                 "obtained_marks": record.obtained_marks,
                 "total_marks": record.total_marks,
                 "percentage": percentage,

@@ -10,7 +10,7 @@ from app.db.session import get_db
 from app.models.academics import Test
 from app.models.enums import RoleName
 from app.models.user import User
-from app.schemas.academics import TestCreate, TestOut
+from app.schemas.academics import TestCreate, TestOut, TestUpdate
 from app.services.audit_service import record_audit
 
 router = APIRouter(prefix="/tests", tags=["Tests"])
@@ -57,6 +57,25 @@ def get_test(test_id: int, db: Session = Depends(get_db), current_user: User = D
     obj = db.get(Test, test_id)
     if obj is None:
         raise NotFoundError("Test not found.")
+    return obj
+
+
+@router.put("/{test_id}", response_model=TestOut)
+def update_test(
+    test_id: int,
+    payload: TestUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_roles(RoleName.SUPER_ADMIN, RoleName.ADMIN, RoleName.TEACHER)),
+):
+    obj = db.get(Test, test_id)
+    if obj is None:
+        raise NotFoundError("Test not found.")
+    data = payload.model_dump(exclude_unset=True)
+    for field, value in data.items():
+        setattr(obj, field, value)
+    record_audit(db, current_user.id, "TEST_UPDATED", "test", obj.id, f"Updated test {obj.name}")
+    db.commit()
+    db.refresh(obj)
     return obj
 
 

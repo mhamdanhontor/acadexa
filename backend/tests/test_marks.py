@@ -150,6 +150,7 @@ def test_quick_marks_success(client, auth_headers, setup_test):
         json={
             "test_name": "Weekly Math Quiz",
             "subject": "Mathematics",
+            "date": "2026-09-23",
             "records": [{"student_id": student_id, "obtained_marks": 45, "total_marks": 50}],
         },
         headers=auth_headers,

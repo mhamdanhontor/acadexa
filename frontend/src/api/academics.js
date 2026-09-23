@@ -10,6 +10,7 @@ export const deleteTestSession = (id) => apiClient.delete(`/test-sessions/${id}`
 export const listTests = (params) => apiClient.get('/tests', { params }).then((r) => r.data)
 export const createTest = (payload) => apiClient.post('/tests', payload).then((r) => r.data)
 export const getTest = (id) => apiClient.get(`/tests/${id}`).then((r) => r.data)
+export const updateTest = (id, payload) => apiClient.put(`/tests/${id}`, payload).then((r) => r.data)
 export const deleteTest = (id) => apiClient.delete(`/tests/${id}`)
 
 // Marks
