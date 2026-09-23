@@ -13,8 +13,9 @@ from app.core.config import settings
 
 
 def _ensure_reports_dir() -> str:
-    os.makedirs(settings.REPORTS_DIR, exist_ok=True)
-    return settings.REPORTS_DIR
+    path = os.path.abspath(settings.REPORTS_DIR)
+    os.makedirs(path, exist_ok=True)
+    return path
 
 
 def generate_monthly_attendance_pdf(
@@ -28,6 +29,7 @@ def generate_monthly_attendance_pdf(
     tests_stats: Optional[dict] = None,
     student_details: Optional[dict] = None,
     daily_records: Optional[list[dict]] = None,
+    previous_months: Optional[list[dict]] = None,
 ) -> str:
     """Generates an elegant, publication-quality A4 Monthly Progress Report PDF
     containing student credentials, complete monthly attendance (metrics + daily log),
@@ -276,15 +278,20 @@ def generate_monthly_attendance_pdf(
     )
     elements.append(pct_banner)
 
-    # Optional Compact Daily Attendance Log (placed in 2 parallel sub-columns if records exist)
+    # Full Month Daily Attendance Log in 3 clean columns
     if daily_records and len(daily_records) > 0:
-        elements.append(Spacer(1, 0.15 * cm))
-        mid = (len(daily_records) + 1) // 2
-        left_recs = daily_records[:mid]
-        right_recs = daily_records[mid:]
+        elements.append(Spacer(1, 0.12 * cm))
+        n = len(daily_records)
+        col_len = (n + 2) // 3
+        col1 = daily_records[0:col_len]
+        col2 = daily_records[col_len:col_len * 2]
+        col3 = daily_records[col_len * 2:]
 
         daily_rows = [
             [
+                Paragraph("Date", table_header),
+                Paragraph("Day", table_header),
+                Paragraph("Status", table_header),
                 Paragraph("Date", table_header),
                 Paragraph("Day", table_header),
                 Paragraph("Status", table_header),
@@ -303,24 +310,47 @@ def generate_monthly_attendance_pdf(
                 return "<font color='#dc2626'><b>Absent</b></font>"
             elif s == "LEAVE":
                 return "<font color='#2563eb'><b>Leave</b></font>"
-            return s
+            elif s in ("SUNDAY", "WEEKEND"):
+                return "<font color='#64748b'>Sunday</font>"
+            elif s in ("OFF", "OFF DAY"):
+                return "<font color='#94a3b8'>Off Day</font>"
+            return s or "—"
 
-        for i in range(mid):
-            l = left_recs[i] if i < len(left_recs) else None
-            r = right_recs[i] if i < len(right_recs) else None
+        def _short_date(iso_d: Optional[str]) -> str:
+            if not iso_d:
+                return ""
+            parts = iso_d.split("-")
+            if len(parts) == 3:
+                try:
+                    m_names = ["", "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+                    return f"{parts[2]}-{m_names[int(parts[1])]}"
+                except Exception:
+                    return iso_d
+            return iso_d
+
+        for i in range(col_len):
+            c1 = col1[i] if i < len(col1) else None
+            c2 = col2[i] if i < len(col2) else None
+            c3 = col3[i] if i < len(col3) else None
+
             row = [
-                Paragraph(l["date"] if l else "", table_cell_center),
-                Paragraph(l["day"] if l else "", table_cell_center),
-                Paragraph(_fmt_status(l["status"]) if l else "", table_cell_center),
-                Paragraph(r["date"] if r else "", table_cell_center),
-                Paragraph(r["day"] if r else "", table_cell_center),
-                Paragraph(_fmt_status(r["status"]) if r else "", table_cell_center),
+                Paragraph(_short_date(c1["date"]) if c1 else "", table_cell_center),
+                Paragraph(c1["day"] if c1 else "", table_cell_center),
+                Paragraph(_fmt_status(c1["status"]) if c1 else "", table_cell_center),
+
+                Paragraph(_short_date(c2["date"]) if c2 else "", table_cell_center),
+                Paragraph(c2["day"] if c2 else "", table_cell_center),
+                Paragraph(_fmt_status(c2["status"]) if c2 else "", table_cell_center),
+
+                Paragraph(_short_date(c3["date"]) if c3 else "", table_cell_center),
+                Paragraph(c3["day"] if c3 else "", table_cell_center),
+                Paragraph(_fmt_status(c3["status"]) if c3 else "", table_cell_center),
             ]
             daily_rows.append(row)
 
         daily_table = Table(
             daily_rows,
-            colWidths=[3.1 * cm, 2.5 * cm, 3.7 * cm, 3.1 * cm, 2.5 * cm, 3.7 * cm],
+            colWidths=[2.1 * cm, 1.4 * cm, 2.7 * cm, 2.1 * cm, 1.4 * cm, 2.7 * cm, 2.1 * cm, 1.4 * cm, 2.7 * cm],
         )
         daily_table.setStyle(
             TableStyle(
@@ -328,8 +358,8 @@ def generate_monthly_attendance_pdf(
                     ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#334155")),
                     ("BOX", (0, 0), (-1, -1), 0.5, colors.HexColor("#cbd5e1")),
                     ("INNERGRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#e2e8f0")),
-                    ("TOPPADDING", (0, 0), (-1, -1), 2),
-                    ("BOTTOMPADDING", (0, 0), (-1, -1), 2),
+                    ("TOPPADDING", (0, 0), (-1, -1), 1.8),
+                    ("BOTTOMPADDING", (0, 0), (-1, -1), 1.8),
                     (
                         "ROWBACKGROUNDS",
                         (0, 1),
@@ -341,7 +371,7 @@ def generate_monthly_attendance_pdf(
         )
         elements.append(daily_table)
 
-    elements.append(Spacer(1, 0.35 * cm))
+    elements.append(Spacer(1, 0.25 * cm))
 
     # 4. Monthly Academic Tests Performance Section
     elements.append(Paragraph("2. MONTHLY TESTS & ACADEMIC EVALUATION", section_heading))
@@ -401,8 +431,8 @@ def generate_monthly_attendance_pdf(
                     ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#1e1b4b")),
                     ("BOX", (0, 0), (-1, -1), 0.5, colors.HexColor("#cbd5e1")),
                     ("INNERGRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#e2e8f0")),
-                    ("TOPPADDING", (0, 0), (-1, -1), 3),
-                    ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
+                    ("TOPPADDING", (0, 0), (-1, -1), 2.5),
+                    ("BOTTOMPADDING", (0, 0), (-1, -1), 2.5),
                     (
                         "ROWBACKGROUNDS",
                         (0, 1),
@@ -420,8 +450,8 @@ def generate_monthly_attendance_pdf(
                 [
                     ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#ede9fe")),
                     ("BOX", (0, 0), (-1, -1), 0.5, colors.HexColor("#ddd6fe")),
-                    ("TOPPADDING", (0, 0), (-1, -1), 3.5),
-                    ("BOTTOMPADDING", (0, 0), (-1, -1), 3.5),
+                    ("TOPPADDING", (0, 0), (-1, -1), 3),
+                    ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
                     ("LEFTPADDING", (0, 0), (-1, -1), 6),
                 ]
             )
@@ -437,18 +467,94 @@ def generate_monthly_attendance_pdf(
                 [
                     ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#f8fafc")),
                     ("BOX", (0, 0), (-1, -1), 0.5, colors.HexColor("#e2e8f0")),
-                    ("TOPPADDING", (0, 0), (-1, -1), 6),
-                    ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
+                    ("TOPPADDING", (0, 0), (-1, -1), 5),
+                    ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
                     ("LEFTPADDING", (0, 0), (-1, -1), 8),
                 ]
             )
         )
         elements.append(no_tests_table)
 
-    elements.append(Spacer(1, 0.35 * cm))
+    elements.append(Spacer(1, 0.25 * cm))
 
-    # 5. Teacher Remarks Box
-    elements.append(Paragraph("3. ACADEMIC REMARKS & OBSERVATIONS", section_heading))
+    # 5. Historical Track Record (Previous 6 Months)
+    elements.append(Paragraph("3. HISTORICAL PERFORMANCE (PREVIOUS 6 MONTHS)", section_heading))
+    if previous_months and any(m.get("has_data") for m in previous_months):
+        hist_rows = [
+            [
+                Paragraph("Month", table_header),
+                Paragraph("Attendance Rate", table_header),
+                Paragraph("Classes (Pres/Tot)", table_header),
+                Paragraph("Tests Taken", table_header),
+                Paragraph("Avg Test Score", table_header),
+                Paragraph("Overall Grade", table_header),
+                Paragraph("Remarks", table_header),
+            ]
+        ]
+        for m in previous_months:
+            att_str = f"{m.get('attendance_pct')}%" if m.get("attendance_pct") is not None else "—"
+            cls_str = f"{m.get('present_days', 0)} / {m.get('total_classes', 0)}" if m.get("total_classes", 0) > 0 else "—"
+            t_taken = f"{m.get('tests_taken', 0)}" if m.get("tests_taken", 0) > 0 else "0"
+            t_score = f"{m.get('test_pct')}%" if m.get("test_pct") is not None else "—"
+            grd = m.get("grade") or "—"
+            rem = m.get("remarks") or "—"
+
+            hist_rows.append(
+                [
+                    Paragraph(m.get("month", "—"), table_cell_center),
+                    Paragraph(f"<b>{att_str}</b>", table_cell_center),
+                    Paragraph(cls_str, table_cell_center),
+                    Paragraph(t_taken, table_cell_center),
+                    Paragraph(f"<b>{t_score}</b>", table_cell_center),
+                    Paragraph(f"<b>{grd}</b>", table_cell_center),
+                    Paragraph(rem, table_cell_center),
+                ]
+            )
+
+        hist_table = Table(
+            hist_rows,
+            colWidths=[2.8 * cm, 2.8 * cm, 3.2 * cm, 2.2 * cm, 2.6 * cm, 2.3 * cm, 2.7 * cm],
+        )
+        hist_table.setStyle(
+            TableStyle(
+                [
+                    ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#334155")),
+                    ("BOX", (0, 0), (-1, -1), 0.5, colors.HexColor("#cbd5e1")),
+                    ("INNERGRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#e2e8f0")),
+                    ("TOPPADDING", (0, 0), (-1, -1), 2.2),
+                    ("BOTTOMPADDING", (0, 0), (-1, -1), 2.2),
+                    (
+                        "ROWBACKGROUNDS",
+                        (0, 1),
+                        (-1, -1),
+                        [colors.white, colors.HexColor("#f8fafc")],
+                    ),
+                ]
+            )
+        )
+        elements.append(hist_table)
+    else:
+        no_hist_table = Table(
+            [[Paragraph("<i>No prior monthly academic or attendance records found (Initial enrollment period).</i>", value_style)]],
+            colWidths=[18.6 * cm],
+        )
+        no_hist_table.setStyle(
+            TableStyle(
+                [
+                    ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#f8fafc")),
+                    ("BOX", (0, 0), (-1, -1), 0.5, colors.HexColor("#e2e8f0")),
+                    ("TOPPADDING", (0, 0), (-1, -1), 4),
+                    ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+                    ("LEFTPADDING", (0, 0), (-1, -1), 8),
+                ]
+            )
+        )
+        elements.append(no_hist_table)
+
+    elements.append(Spacer(1, 0.25 * cm))
+
+    # 6. Teacher Remarks Box
+    elements.append(Paragraph("4. ACADEMIC REMARKS & OBSERVATIONS", section_heading))
     remarks_text = (
         "Demonstrates good classroom engagement and diligence. Regular attendance and sustained focus on "
         "practice tests will continue to yield strong academic progress."
@@ -459,16 +565,16 @@ def generate_monthly_attendance_pdf(
             [
                 ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#f8fafc")),
                 ("BOX", (0, 0), (-1, -1), 0.5, colors.HexColor("#cbd5e1")),
-                ("TOPPADDING", (0, 0), (-1, -1), 6),
-                ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
+                ("TOPPADDING", (0, 0), (-1, -1), 4),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
                 ("LEFTPADDING", (0, 0), (-1, -1), 8),
             ]
         )
     )
     elements.append(remarks_table)
-    elements.append(Spacer(1, 0.45 * cm))
+    elements.append(Spacer(1, 0.35 * cm))
 
-    # 6. Official Signatures Block
+    # 7. Official Signatures Block
     sig_data = [
         [
             Paragraph("____________________________<br/><b>Class Teacher</b>", table_cell_center),
@@ -480,13 +586,13 @@ def generate_monthly_attendance_pdf(
     sig_table.setStyle(
         TableStyle(
             [
-                ("TOPPADDING", (0, 0), (-1, -1), 8),
-                ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+                ("TOPPADDING", (0, 0), (-1, -1), 6),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
             ]
         )
     )
     elements.append(sig_table)
-    elements.append(Spacer(1, 0.2 * cm))
+    elements.append(Spacer(1, 0.15 * cm))
 
     # Footer note
     footer_p = Paragraph(

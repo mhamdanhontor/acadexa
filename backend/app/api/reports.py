@@ -1,4 +1,5 @@
 """Monthly report API: generate, list, approve/reject, send, download PDF, month-end reminder."""
+import os
 from typing import Optional
 
 from fastapi import APIRouter, Depends, Query
@@ -26,6 +27,7 @@ from app.services.report_service import (
     approve_and_send_all_reports,
     approve_and_send_report,
     approve_report,
+    ensure_report_pdf,
     generate_monthly_attendance_reports,
     get_month_end_reminder,
     send_report,
@@ -177,6 +179,13 @@ def download_report(
     current_user: User = Depends(get_current_user),
 ):
     report = db.get(MonthlyReport, report_id)
-    if report is None or not report.file_path:
-        raise NotFoundError("Report file not found.")
-    return FileResponse(report.file_path, filename=f"report_{report_id}.pdf", media_type="application/pdf")
+    if report is None:
+        raise NotFoundError("Report not found.")
+
+    file_path = ensure_report_pdf(db, report)
+    if not file_path or not os.path.exists(file_path):
+        raise NotFoundError("Report PDF file could not be generated.")
+
+    student_code = report.student.student_code if report.student else report.student_id
+    filename = f"monthly_report_{student_code or report_id}.pdf"
+    return FileResponse(file_path, filename=filename, media_type="application/pdf")

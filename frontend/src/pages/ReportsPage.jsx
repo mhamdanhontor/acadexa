@@ -138,8 +138,21 @@ export default function ReportsPage() {
     try {
       await sendReport(report.id)
       setConfirmSend(null)
-      setSuccessMsg(`Report #${report.id} sent successfully via WhatsApp queue.`)
-      setTimeout(() => setSuccessMsg(''), 4000)
+      setSuccessMsg(`Report #${report.id} sent! Downloading PDF and opening WhatsApp...`)
+      setTimeout(() => setSuccessMsg(''), 5000)
+
+      // 1. Download PDF report
+      try {
+        await handleDownload(report)
+      } catch (dlErr) {
+        console.warn('PDF download failed:', dlErr)
+      }
+
+      // 2. Open WhatsApp
+      if (report.whatsapp_number) {
+        handleOpenWhatsAppDirect(report)
+      }
+
       load()
       loadReminder()
     } catch (err) {
@@ -153,8 +166,21 @@ export default function ReportsPage() {
     try {
       await approveAndSendReport(report.id)
       setConfirmApproveAndSend(null)
-      setSuccessMsg(`Report for ${report.student_name || 'student'} approved & queued for WhatsApp delivery!`)
-      setTimeout(() => setSuccessMsg(''), 4000)
+      setSuccessMsg(`Report for ${report.student_name || 'student'} approved and sent! Downloading PDF and opening WhatsApp...`)
+      setTimeout(() => setSuccessMsg(''), 5000)
+
+      // 1. Download PDF report
+      try {
+        await handleDownload(report)
+      } catch (dlErr) {
+        console.warn('PDF auto-download failed:', dlErr)
+      }
+
+      // 2. Open WhatsApp directly with student report message
+      if (report.whatsapp_number) {
+        handleOpenWhatsAppDirect(report)
+      }
+
       load()
       loadReminder()
     } catch (err) {
@@ -186,17 +212,40 @@ export default function ReportsPage() {
       await downloadFile(downloadReportPath(report.id), `monthly_report_${report.student_code || report.id}.pdf`)
     } catch (err) {
       setActionError(normalizeError(err).message)
+      throw err
     }
   }
 
   function handleOpenWhatsAppDirect(report) {
-    if (!report.whatsapp_number) return
+    if (!report.whatsapp_number) {
+      setActionError(`Student ${report.student_name || 'student'} does not have a registered WhatsApp number.`)
+      return
+    }
+
+    let attSummary = ''
+    let testSummary = ''
+    try {
+      if (report.data_json) {
+        const d = typeof report.data_json === 'string' ? JSON.parse(report.data_json) : report.data_json
+        if (d.attendance) {
+          attSummary = `\n📊 *Monthly Attendance:* *${d.attendance.percentage}%* (${d.attendance.present || 0} Present, ${d.attendance.late || 0} Late, ${d.attendance.absent || 0} Absent)`
+        }
+        if (d.academics && d.academics.total_tests > 0) {
+          testSummary = `\n📝 *Tests & Marks:* ${d.academics.total_tests} Tests Conducted | Avg Score: *${d.academics.overall_percentage}%* | Grade: *${d.academics.overall_grade}*`
+        }
+      }
+    } catch (e) {
+      console.warn('Failed to parse report data_json for WhatsApp msg:', e)
+    }
+
     const msg =
       `*MONTHLY PROGRESS REPORT*\n` +
-      `Student: *${report.student_name}* (${report.student_code})\n` +
+      `Student: *${report.student_name}* (${report.student_code || `#${report.student_id}`})\n` +
       `Period: *${report.period_start} to ${report.period_end}*\n` +
-      `Class: *${report.class_name || className(report.class_id)}* | Batch: *${report.batch_name || batchName(report.batch_id)}*\n\n` +
-      `Your child's official monthly academic and attendance report is ready. Please contact academy administration for inquiries.\n\n` +
+      `Class: *${report.class_name || className(report.class_id)}* | Batch: *${report.batch_name || batchName(report.batch_id)}*\n` +
+      attSummary +
+      testSummary +
+      `\n\nYour child's official monthly academic and attendance report has been generated. The detailed PDF report is downloaded and ready for review.\n\n` +
       `*Honor Knowledge Academy*`
     openWhatsApp(report.whatsapp_number, msg)
   }
@@ -376,17 +425,15 @@ export default function ReportsPage() {
                     </td>
                     <td className="px-5 py-3.5 text-right space-x-2">
                       {/* Download PDF button */}
-                      {r.file_path && (
-                        <button
-                          type="button"
-                          onClick={() => handleDownload(r)}
-                          className="inline-flex items-center gap-1 text-xs font-semibold text-indigo-600 hover:text-indigo-800 px-2 py-1 rounded bg-indigo-50 hover:bg-indigo-100 transition-colors cursor-pointer"
-                          title="Download Beautiful PDF Report"
-                        >
-                          <i className="fas fa-file-pdf"></i>
-                          PDF
-                        </button>
-                      )}
+                      <button
+                        type="button"
+                        onClick={() => handleDownload(r)}
+                        className="inline-flex items-center gap-1 text-xs font-semibold text-indigo-600 hover:text-indigo-800 px-2 py-1 rounded bg-indigo-50 hover:bg-indigo-100 transition-colors cursor-pointer"
+                        title="Download Official PDF Report"
+                      >
+                        <i className="fas fa-file-pdf"></i>
+                        PDF
+                      </button>
 
                       {/* Direct WhatsApp Web Sender if phone available */}
                       {r.whatsapp_number && (
@@ -530,8 +577,8 @@ export default function ReportsPage() {
       <ConfirmDialog
         open={!!confirmSend}
         title="Send Report"
-        message={`This will queue a WhatsApp notification to send the approved report for ${confirmSend?.student_name || `student #${confirmSend?.student_id}`} to ${confirmSend?.whatsapp_number || 'their registered number'}. Continue?`}
-        confirmLabel="Send to WhatsApp"
+        message={`This will mark the monthly report for ${confirmSend?.student_name || `student #${confirmSend?.student_id}`} as SENT, automatically download the official PDF report, and open WhatsApp with the report summary to ${confirmSend?.whatsapp_number || 'their registered number'}. Continue?`}
+        confirmLabel="Send & Download"
         onConfirm={() => handleSend(confirmSend)}
         onCancel={() => setConfirmSend(null)}
       />
@@ -540,7 +587,7 @@ export default function ReportsPage() {
       <ConfirmDialog
         open={!!confirmApproveAndSend}
         title="Approve & Send Report"
-        message={`This will mark the monthly report for ${confirmApproveAndSend?.student_name || `student #${confirmApproveAndSend?.student_id}`} as APPROVED and immediately queue WhatsApp delivery to ${confirmApproveAndSend?.whatsapp_number || 'their registered number'}. Continue?`}
+        message={`This will approve the monthly report for ${confirmApproveAndSend?.student_name || `student #${confirmApproveAndSend?.student_id}`}, mark it as SENT, automatically download the official PDF report, and open WhatsApp with the report details to ${confirmApproveAndSend?.whatsapp_number || 'their registered number'}. Continue?`}
         confirmLabel="Approve & Send"
         onConfirm={() => handleApproveAndSend(confirmApproveAndSend)}
         onCancel={() => setConfirmApproveAndSend(null)}

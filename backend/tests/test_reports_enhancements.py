@@ -91,7 +91,14 @@ def test_report_generation_includes_attendance_and_tests(client, auth_headers, d
     # Check attendance: 2 classes, 1 present, 1 late, 100% attendance rate
     assert payload["attendance"]["total_classes"] == 2
     assert payload["attendance"]["percentage"] == 100.0
-    assert len(payload["daily_records"]) == 2
+    # Full month daily calendar has 30 days for September
+    assert len(payload["daily_records"]) == 30
+    assert payload["daily_records"][0]["date"] == "2026-09-01"
+    assert payload["daily_records"][-1]["date"] == "2026-09-30"
+
+    # Check previous 6 months history
+    assert "previous_months" in payload
+    assert len(payload["previous_months"]) == 6
 
     # Check academic test marks
     assert payload["academics"]["total_tests"] == 1
@@ -171,4 +178,36 @@ def test_dashboard_summary_includes_late_in_percentage(client, auth_headers):
     assert d2["late_today"] == 1
     # Late counts as present, so 1 late out of 1 marked = 100%
     assert d2["attendance_percentage_today"] == 100.0
+
+
+def test_download_report_regenerates_when_missing(client, auth_headers):
+    # Setup student and generate report
+    c_id = client.post("/api/v1/classes", json={"name": "DownloadTestClass"}, headers=auth_headers).json()["id"]
+    b_id = client.post("/api/v1/batches", json={"name": "Morning"}, headers=auth_headers).json()["id"]
+    sid = client.post(
+        "/api/v1/students",
+        json={"student_code": "DL-01", "name": "Download Student", "whatsapp_number": "923009998888", "class_id": c_id, "batch_id": b_id},
+        headers=auth_headers,
+    ).json()["id"]
+
+    gen_resp = client.post(
+        "/api/v1/reports/generate",
+        json={"period_start": "2026-09-01", "period_end": "2026-09-30", "student_id": sid},
+        headers=auth_headers,
+    )
+    assert gen_resp.status_code == 200
+    report_id = gen_resp.json()[0]["id"]
+    file_path = gen_resp.json()[0]["file_path"]
+
+    # Delete the generated file from disk to simulate ephemeral container restart / wiped disk
+    import os
+    if file_path and os.path.exists(file_path):
+        os.remove(file_path)
+
+    # Calling download endpoint must NOT return 500; it must regenerate and return 200 PDF
+    dl_resp = client.get(f"/api/v1/reports/{report_id}/download", headers=auth_headers)
+    assert dl_resp.status_code == 200
+    assert dl_resp.headers["content-type"] == "application/pdf"
+    assert len(dl_resp.content) > 1000
+
 

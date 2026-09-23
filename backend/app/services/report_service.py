@@ -9,7 +9,7 @@ or via explicit "Approve & Send" user confirmation.
 import calendar
 import json
 import os
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from typing import Optional
 
 from sqlalchemy.orm import Session, joinedload
@@ -62,14 +62,27 @@ def _attendance_stats_for_student(
         "percentage": percentage,
     }
 
-    daily_records = [
-        {
-            "date": r.date.isoformat(),
-            "day": r.date.strftime("%a"),
-            "status": r.status.value,
-        }
-        for r in rows
-    ]
+    # Full month calendar: account for every calendar day in [period_start, period_end]
+    rows_map = {r.date: r for r in rows}
+    daily_records = []
+    curr = period_start
+    while curr <= period_end:
+        day_str = curr.strftime("%a")
+        r = rows_map.get(curr)
+        if r:
+            status_val = r.status.value
+        elif curr.weekday() == 6:  # Sunday
+            status_val = "SUNDAY"
+        else:
+            status_val = "OFF"
+        daily_records.append(
+            {
+                "date": curr.isoformat(),
+                "day": day_str,
+                "status": status_val,
+            }
+        )
+        curr += timedelta(days=1)
 
     return stats, daily_records
 
@@ -77,17 +90,38 @@ def _attendance_stats_for_student(
 def _tests_summary_for_student(
     db: Session, student: Student, period_start: date, period_end: date
 ) -> dict:
-    """Finds all tests conducted in [period_start, period_end] for the student's class
-    (or any test the student took), along with obtained marks, percentages and grades.
+    """Finds all tests conducted in [period_start, period_end] for the student's class,
+    batch, or any test the student took, along with obtained marks, percentages and grades.
     """
+    # 1. Tests where student has marks recorded
+    marked_test_ids = [
+        m.test_id
+        for m in db.query(Marks.test_id)
+        .join(Test, Marks.test_id == Test.id)
+        .filter(
+            Marks.student_id == student.id,
+            Test.test_date >= period_start,
+            Test.test_date <= period_end,
+        )
+        .all()
+    ]
+
+    # 2. Query all tests for student's class / batch or general or where student has marks
+    query_filter = (
+        (Test.test_date >= period_start)
+        & (Test.test_date <= period_end)
+        & (
+            (Test.class_id == student.class_id)
+            | (Test.batch_id == student.batch_id)
+            | (Test.class_id.is_(None))
+            | (Test.id.in_(marked_test_ids))
+        )
+    )
+
     tests = (
         db.query(Test)
         .options(joinedload(Test.subject))
-        .filter(
-            Test.test_date >= period_start,
-            Test.test_date <= period_end,
-            (Test.class_id == student.class_id) | (Test.class_id.is_(None)),
-        )
+        .filter(query_filter)
         .order_by(Test.test_date.asc())
         .all()
     )
@@ -146,6 +180,204 @@ def _tests_summary_for_student(
     }
 
 
+def _get_previous_months_summary(
+    db: Session, student_id: int, current_period_start: date, num_months: int = 6
+) -> list[dict]:
+    """Generates an oneliner historical performance summary for up to `num_months`
+    prior to `current_period_start`.
+    """
+    history = []
+    year = current_period_start.year
+    month = current_period_start.month
+
+    for _ in range(num_months):
+        month -= 1
+        if month < 1:
+            month = 12
+            year -= 1
+
+        last_day = calendar.monthrange(year, month)[1]
+        m_start = date(year, month, 1)
+        m_end = date(year, month, last_day)
+        m_label = m_start.strftime("%b %Y")
+
+        past_rep = (
+            db.query(MonthlyReport)
+            .filter(
+                MonthlyReport.student_id == student_id,
+                MonthlyReport.period_start == m_start,
+                MonthlyReport.period_end == m_end,
+            )
+            .first()
+        )
+
+        att_pct = None
+        att_present = 0
+        att_total = 0
+        tests_count = 0
+        test_pct = None
+        grade = "—"
+        remarks = "—"
+
+        if past_rep and past_rep.data_json:
+            try:
+                pj = json.loads(past_rep.data_json)
+                att_data = pj.get("attendance", {})
+                att_pct = att_data.get("percentage")
+                att_present = att_data.get("present", 0) + att_data.get("late", 0)
+                att_total = att_data.get("total_classes", 0)
+
+                acad_data = pj.get("academics", {})
+                tests_count = acad_data.get("total_tests", 0)
+                test_pct = acad_data.get("overall_percentage")
+                grade = acad_data.get("overall_grade", "—")
+            except Exception:
+                pass
+
+        if att_pct is None:
+            # Query attendance directly
+            att_rows = (
+                db.query(Attendance)
+                .filter(
+                    Attendance.student_id == student_id,
+                    Attendance.date >= m_start,
+                    Attendance.date <= m_end,
+                )
+                .all()
+            )
+            if att_rows:
+                att_total = len(att_rows)
+                present_c = sum(1 for r in att_rows if r.status == AttendanceStatus.PRESENT)
+                late_c = sum(1 for r in att_rows if r.status == AttendanceStatus.LATE)
+                att_present = present_c + late_c
+                att_pct = round((att_present / att_total) * 100, 1) if att_total > 0 else 0.0
+
+            # Query marks directly
+            m_rows = (
+                db.query(Marks)
+                .join(Test, Marks.test_id == Test.id)
+                .filter(
+                    Marks.student_id == student_id,
+                    Test.test_date >= m_start,
+                    Test.test_date <= m_end,
+                )
+                .all()
+            )
+            if m_rows:
+                tests_count = len(m_rows)
+                tot_max = sum(m.test.total_marks for m in m_rows if m.test)
+                tot_obt = sum(m.obtained_marks for m in m_rows if m.obtained_marks is not None)
+                if tot_max > 0:
+                    test_pct = round((tot_obt / tot_max) * 100, 1)
+                    grade = compute_grade(test_pct)
+
+        has_data = (att_total > 0) or (tests_count > 0)
+        if not has_data:
+            remarks = "No Record"
+        else:
+            score = test_pct if test_pct is not None else att_pct
+            if score is not None:
+                if score >= 90:
+                    remarks = "Excellent"
+                elif score >= 80:
+                    remarks = "Very Good"
+                elif score >= 70:
+                    remarks = "Good"
+                elif score >= 60:
+                    remarks = "Satisfactory"
+                else:
+                    remarks = "Needs Attention"
+
+        history.append(
+            {
+                "month": m_label,
+                "period_start": m_start.isoformat(),
+                "period_end": m_end.isoformat(),
+                "has_data": has_data,
+                "attendance_pct": att_pct,
+                "present_days": att_present,
+                "total_classes": att_total,
+                "tests_taken": tests_count,
+                "test_pct": test_pct,
+                "grade": grade,
+                "remarks": remarks,
+            }
+        )
+
+    return history
+
+
+def ensure_report_pdf(db: Session, report: MonthlyReport) -> str:
+    """Ensures the PDF file for a MonthlyReport exists on disk.
+    If missing (e.g. after container restart or ephemeral wipe), regenerates it dynamically.
+    """
+    if report.file_path and os.path.isfile(report.file_path) and os.path.getsize(report.file_path) > 0:
+        return report.file_path
+
+    student = report.student or (db.get(Student, report.student_id) if report.student_id else None)
+    if not student:
+        raise NotFoundError("Student associated with report not found.")
+
+    academy_name = get_setting(db, "academy_name") or "Honor Knowledge Academy"
+
+    payload = {}
+    if report.data_json:
+        try:
+            payload = json.loads(report.data_json)
+        except Exception:
+            payload = {}
+
+    stats = payload.get("attendance")
+    daily_records = payload.get("daily_records")
+    tests_stats = payload.get("academics")
+    prev_months = payload.get("previous_months")
+
+    if not stats or not daily_records:
+        stats, daily_records = _attendance_stats_for_student(
+            db, student.id, report.period_start, report.period_end
+        )
+    if not tests_stats:
+        tests_stats = _tests_summary_for_student(
+            db, student, report.period_start, report.period_end
+        )
+    if not prev_months:
+        prev_months = _get_previous_months_summary(db, student.id, report.period_start)
+
+    full_payload = {
+        "student_name": student.name,
+        "student_code": student.student_code,
+        "class_name": student.class_room.name if student.class_room else "",
+        "batch_name": student.batch.name if student.batch else "",
+        "guardian_name": student.guardian_name or "Parent/Guardian",
+        "whatsapp_number": student.whatsapp_number,
+        "period_start": report.period_start.isoformat(),
+        "period_end": report.period_end.isoformat(),
+        "attendance": stats,
+        "daily_records": daily_records,
+        "academics": tests_stats,
+        "previous_months": prev_months,
+    }
+    report.data_json = json.dumps(full_payload)
+
+    pdf_path = generate_monthly_attendance_pdf(
+        academy_name=academy_name,
+        student_name=student.name,
+        student_code=student.student_code,
+        period_start=report.period_start,
+        period_end=report.period_end,
+        stats=stats,
+        report_id=report.id,
+        tests_stats=tests_stats,
+        student_details=full_payload,
+        daily_records=daily_records,
+        previous_months=prev_months,
+    )
+    report.file_path = pdf_path
+    db.commit()
+    db.refresh(report)
+    return pdf_path
+
+
 def generate_monthly_attendance_reports(
     db: Session,
     period_start: date,
@@ -185,6 +417,7 @@ def generate_monthly_attendance_reports(
         tests_stats = _tests_summary_for_student(
             db, student, period_start, period_end
         )
+        prev_months = _get_previous_months_summary(db, student.id, period_start)
 
         existing = (
             db.query(MonthlyReport)
@@ -221,6 +454,7 @@ def generate_monthly_attendance_reports(
             "attendance": stats,
             "daily_records": daily_records,
             "academics": tests_stats,
+            "previous_months": prev_months,
         }
         report.data_json = json.dumps(full_payload)
         report.status = ReportStatus.READY
@@ -239,6 +473,7 @@ def generate_monthly_attendance_reports(
             tests_stats=tests_stats,
             student_details=full_payload,
             daily_records=daily_records,
+            previous_months=prev_months,
         )
         report.file_path = pdf_path
         reports.append(report)
