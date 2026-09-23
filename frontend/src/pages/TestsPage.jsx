@@ -21,7 +21,7 @@ import ConfirmDeleteModal from '../components/ConfirmDeleteModal'
 const EMPTY_SESSION_FORM = { name: '', start_date: '', end_date: '', period_count: 4 }
 const EMPTY_TEST_FORM = {
   session_id: '',
-  period_label: 'Period 1',
+  period_label: '',
   subject_id: '',
   class_id: '',
   batch_id: '',
@@ -189,7 +189,7 @@ export default function TestsPage() {
       batch_id: batches[0]?.id || '',
       name: suggestedName,
       test_date: new Date().toISOString().slice(0, 10),
-      period_label: `Period 1`,
+      period_label: '',
       total_marks: 100,
     })
     setFormError('')
@@ -208,6 +208,7 @@ export default function TestsPage() {
         class_id: Number(testForm.class_id),
         batch_id: Number(testForm.batch_id),
         total_marks: Number(testForm.total_marks),
+        period_label: (testForm.period_label || '').trim() || 'General',
       })
       setTestModalOpen(false)
       setSuccessMsg(`Test "${created.name}" created successfully.`)
@@ -663,7 +664,7 @@ export default function TestsPage() {
                         <tr>
                           <th className="px-5 py-3 font-semibold">Test Name</th>
                           <th className="px-5 py-3 font-semibold">Class & Batch</th>
-                          <th className="px-5 py-3 font-semibold">Period</th>
+                          <th className="px-5 py-3 font-semibold">Syllabus</th>
                           <th className="px-5 py-3 font-semibold">Test Date</th>
                           <th className="px-5 py-3 font-semibold">Total Marks</th>
                           <th className="px-5 py-3 font-semibold text-right">Actions</th>
@@ -876,13 +877,13 @@ export default function TestsPage() {
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Evaluation Period Label</label>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Syllabus</label>
             <input
               required
               value={testForm.period_label}
               onChange={(e) => setTestForm({ ...testForm, period_label: e.target.value })}
               className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
-              placeholder="e.g. Period 1, Month 1, Term 1"
+              placeholder="e.g. Chapter 1, Organic Chemistry, Full Book"
             />
           </div>
 

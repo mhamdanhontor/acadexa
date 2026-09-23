@@ -337,7 +337,7 @@ export default function MarksPage() {
             </span>
             <span className="text-gray-300">|</span>
             <span>
-              Period: <strong className="text-gray-900">{selectedTest.period_label || '—'}</strong>
+              Syllabus: <strong className="text-gray-900">{selectedTest.period_label || '—'}</strong>
             </span>
           </div>
         )}
