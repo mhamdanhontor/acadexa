@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 
 def paginate(db: Session, stmt: Select, page: int = 1, page_size: int = 20):
     page = max(page, 1)
-    page_size = min(max(page_size, 1), 200)
+    page_size = min(max(page_size, 1), 500)
 
     count_stmt = select(func.count()).select_from(stmt.subquery())
     total_count = db.execute(count_stmt).scalar_one()

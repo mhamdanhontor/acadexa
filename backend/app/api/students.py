@@ -30,7 +30,7 @@ def list_students(
     admission_date_from: Optional[date] = None,
     admission_date_to: Optional[date] = None,
     page: int = Query(1, ge=1),
-    page_size: int = Query(20, ge=1, le=200),
+    page_size: int = Query(20, ge=1, le=500),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):

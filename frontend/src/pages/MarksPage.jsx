@@ -91,8 +91,8 @@ export default function MarksPage() {
       setSelectedTest(test)
 
       const [studentData, existingMarks] = await Promise.all([
-        listStudents({ class_id: test.class_id, is_active: true, page_size: 500 }),
-        listMarks({ test_id: testId, page_size: 500 }),
+        listStudents({ class_id: test.class_id, is_active: true, page_size: 200 }),
+        listMarks({ test_id: testId, page_size: 200 }),
       ])
       const rawStudents = Array.isArray(studentData) ? studentData : (studentData?.items || [])
       // Sort in ascending order of Student ID (natural numeric sorting)
